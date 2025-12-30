@@ -5,7 +5,11 @@ namespace MiniDatabaseEngine.Storage;
 /// </summary>
 public class Page
 {
+#if DATA_PAGE_SIZE
+    public const int PageSize = #DATA_PAGE_SIZE#; 
+#else
     public const int PageSize = 4096; // 4KB pages
+#endif
     public int PageId { get; set; }
     public byte[] Data { get; set; }
     public bool IsDirty { get; set; }
