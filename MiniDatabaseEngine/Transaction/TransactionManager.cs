@@ -11,10 +11,12 @@ public class TransactionManager : IDisposable
     private readonly ConcurrentDictionary<long, Transaction> _activeTransactions;
     private long _nextTransactionId;
     private readonly ReaderWriterLockSlim _lock;
+    private readonly Action<WALEntry> _undoCallback;
 
-    public TransactionManager(WALManager walManager)
+    public TransactionManager(WALManager walManager, Action<WALEntry> undoCallback)
     {
         _walManager = walManager;
+        _undoCallback = undoCallback;
         _activeTransactions = new ConcurrentDictionary<long, Transaction>();
         _nextTransactionId = 1;
         _lock = new ReaderWriterLockSlim();
@@ -29,7 +31,7 @@ public class TransactionManager : IDisposable
         try
         {
             long transactionId = _nextTransactionId++;
-            var transaction = new Transaction(transactionId, _walManager, this);
+            var transaction = new Transaction(transactionId, _walManager, this, _undoCallback);
             _activeTransactions[transactionId] = transaction;
             return transaction;
         }

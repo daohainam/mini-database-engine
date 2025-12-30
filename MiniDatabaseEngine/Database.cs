@@ -16,6 +16,7 @@ public class Database : IDisposable
     private readonly WALManager _walManager;
     private readonly TransactionManager _transactionManager;
     private readonly string _filePath;
+    private readonly Dictionary<string, List<WALEntry>> _pendingRecoveryEntries;
     
     public Database(string filePath, int cacheSize = 100, bool useMemoryMappedFile = false)
     {
@@ -30,9 +31,10 @@ public class Database : IDisposable
         _tables = new ConcurrentDictionary<string, Table>();
         _lock = new ReaderWriterLockSlim();
         _walManager = new WALManager(filePath);
-        _transactionManager = new TransactionManager(_walManager);
+        _transactionManager = new TransactionManager(_walManager, ApplyUndoEntry);
+        _pendingRecoveryEntries = new Dictionary<string, List<WALEntry>>();
         
-        // Recover from WAL if needed
+        // Recover from WAL if needed - entries will be cached
         RecoverFromWAL();
     }
     
@@ -51,6 +53,17 @@ public class Database : IDisposable
             var table = new Table(schema, _storage);
             
             _tables[tableName] = table;
+            
+            // Apply any pending recovery entries for this table
+            if (_pendingRecoveryEntries.TryGetValue(tableName, out var entries))
+            {
+                foreach (var entry in entries)
+                {
+                    ApplyWALEntryToTable(table, entry);
+                }
+                _pendingRecoveryEntries.Remove(tableName);
+            }
+            
             return table;
         }
         finally
@@ -123,13 +136,16 @@ public class Database : IDisposable
     }
     
     /// <summary>
-    /// Perform a checkpoint - flush all data and truncate WAL
+    /// Perform a checkpoint - flush all data and mark checkpoint
+    /// Note: WAL is NOT truncated to preserve data for recovery since B+ tree is not persisted to disk
     /// </summary>
     public void Checkpoint()
     {
         _storage.Flush();
         _walManager.Checkpoint();
-        _walManager.TruncateAfterCheckpoint();
+        // Don't truncate WAL since B+ tree data is not persisted to the main database file
+        // In a real implementation, we would persist the B+ tree before truncating
+        // _walManager.TruncateAfterCheckpoint();
     }
     
     /// <summary>
@@ -142,37 +158,66 @@ public class Database : IDisposable
     }
     
     /// <summary>
+    /// Apply an undo entry during rollback
+    /// </summary>
+    private void ApplyUndoEntry(WALEntry entry)
+    {
+        if (!_tables.TryGetValue(entry.TableName, out var table))
+            return;
+
+        ApplyWALEntryToTable(table, entry);
+    }
+    
+    /// <summary>
+    /// Apply a WAL entry to a specific table
+    /// </summary>
+    private void ApplyWALEntryToTable(Table table, WALEntry entry)
+    {
+        switch (entry.OperationType)
+        {
+            case WALOperationType.Insert:
+                if (entry.NewValue != null && entry.Key != null)
+                {
+                    table.ApplyWALEntry(entry.Key, entry.NewValue, isDelete: false);
+                }
+                break;
+
+            case WALOperationType.Update:
+                if (entry.NewValue != null && entry.Key != null)
+                {
+                    table.ApplyWALEntry(entry.Key, entry.NewValue, isDelete: false);
+                }
+                break;
+
+            case WALOperationType.Delete:
+                if (entry.Key != null)
+                {
+                    table.ApplyWALEntry(entry.Key, null, isDelete: true);
+                }
+                break;
+        }
+    }
+    
+    /// <summary>
     /// Recover from WAL on database startup
     /// </summary>
     private void RecoverFromWAL()
     {
         _transactionManager.RecoverFromWAL(entry =>
         {
-            if (!_tables.TryGetValue(entry.TableName, out var table))
-                return;
-
-            switch (entry.OperationType)
+            // If table exists, apply immediately
+            if (_tables.TryGetValue(entry.TableName, out var table))
             {
-                case WALOperationType.Insert:
-                    if (entry.NewValue != null && entry.Key != null)
-                    {
-                        table.ApplyWALEntry(entry.Key, entry.NewValue, isDelete: false);
-                    }
-                    break;
-
-                case WALOperationType.Update:
-                    if (entry.NewValue != null && entry.Key != null)
-                    {
-                        table.ApplyWALEntry(entry.Key, entry.NewValue, isDelete: false);
-                    }
-                    break;
-
-                case WALOperationType.Delete:
-                    if (entry.Key != null)
-                    {
-                        table.ApplyWALEntry(entry.Key, null, isDelete: true);
-                    }
-                    break;
+                ApplyWALEntryToTable(table, entry);
+            }
+            else
+            {
+                // Otherwise, cache for later application when table is created
+                if (!_pendingRecoveryEntries.ContainsKey(entry.TableName))
+                {
+                    _pendingRecoveryEntries[entry.TableName] = new List<WALEntry>();
+                }
+                _pendingRecoveryEntries[entry.TableName].Add(entry);
             }
         });
     }

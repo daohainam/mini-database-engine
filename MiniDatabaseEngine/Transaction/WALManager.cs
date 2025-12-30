@@ -63,32 +63,40 @@ public class WALManager : IDisposable
         _lock.EnterReadLock();
         try
         {
-            var entries = new List<WALEntry>();
-            _walStream.Seek(0, SeekOrigin.Begin);
-
-            using var reader = new BinaryReader(_walStream, System.Text.Encoding.UTF8, leaveOpen: true);
-            while (_walStream.Position < _walStream.Length)
-            {
-                try
-                {
-                    int length = reader.ReadInt32();
-                    byte[] data = reader.ReadBytes(length);
-                    var entry = WALEntry.Deserialize(data);
-                    entries.Add(entry);
-                }
-                catch (EndOfStreamException)
-                {
-                    // Reached end of valid entries
-                    break;
-                }
-            }
-
-            return entries;
+            return ReadAllEntriesInternal();
         }
         finally
         {
             _lock.ExitReadLock();
         }
+    }
+
+    /// <summary>
+    /// Internal method to read entries without locking (for use when lock is already held)
+    /// </summary>
+    private List<WALEntry> ReadAllEntriesInternal()
+    {
+        var entries = new List<WALEntry>();
+        _walStream.Seek(0, SeekOrigin.Begin);
+
+        using var reader = new BinaryReader(_walStream, System.Text.Encoding.UTF8, leaveOpen: true);
+        while (_walStream.Position < _walStream.Length)
+        {
+            try
+            {
+                int length = reader.ReadInt32();
+                byte[] data = reader.ReadBytes(length);
+                var entry = WALEntry.Deserialize(data);
+                entries.Add(entry);
+            }
+            catch (EndOfStreamException)
+            {
+                // Reached end of valid entries
+                break;
+            }
+        }
+
+        return entries;
     }
 
     /// <summary>
@@ -146,7 +154,7 @@ public class WALManager : IDisposable
         _lock.EnterWriteLock();
         try
         {
-            var entries = ReadAllEntries();
+            var entries = ReadAllEntriesInternal();
             
             // Find the last checkpoint
             var lastCheckpoint = entries.LastOrDefault(e => e.OperationType == WALOperationType.Checkpoint);
