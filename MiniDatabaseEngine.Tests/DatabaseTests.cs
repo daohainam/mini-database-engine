@@ -142,8 +142,14 @@ public class DatabaseTests : IDisposable
         {
             new("Id", DataType.Int, false),
             new("ByteVal", DataType.Byte),
+            new("SByteVal", DataType.SByte),
+            new("ShortVal", DataType.Short),
+            new("UShortVal", DataType.UShort),
+            new("UIntVal", DataType.UInt),
             new("LongVal", DataType.Long),
+            new("ULongVal", DataType.ULong),
             new("BoolVal", DataType.Bool),
+            new("CharVal", DataType.Char),
             new("StringVal", DataType.String),
             new("FloatVal", DataType.Float),
             new("DoubleVal", DataType.Double),
@@ -156,8 +162,14 @@ public class DatabaseTests : IDisposable
         var row = new DataRow(table.Schema);
         row["Id"] = 1;
         row["ByteVal"] = (byte)255;
+        row["SByteVal"] = (sbyte)-128;
+        row["ShortVal"] = (short)-32768;
+        row["UShortVal"] = (ushort)65535;
+        row["UIntVal"] = (uint)4294967295;
         row["LongVal"] = 9223372036854775807L;
+        row["ULongVal"] = 18446744073709551615UL;
         row["BoolVal"] = true;
+        row["CharVal"] = 'A';
         row["StringVal"] = "Test String";
         row["FloatVal"] = 3.14f;
         row["DoubleVal"] = 3.141592653589793;
@@ -169,8 +181,14 @@ public class DatabaseTests : IDisposable
         var result = table.SelectByKey(1);
         Assert.NotNull(result);
         Assert.Equal((byte)255, result["ByteVal"]);
+        Assert.Equal((sbyte)-128, result["SByteVal"]);
+        Assert.Equal((short)-32768, result["ShortVal"]);
+        Assert.Equal((ushort)65535, result["UShortVal"]);
+        Assert.Equal((uint)4294967295, result["UIntVal"]);
         Assert.Equal(9223372036854775807L, result["LongVal"]);
+        Assert.Equal(18446744073709551615UL, result["ULongVal"]);
         Assert.Equal(true, result["BoolVal"]);
+        Assert.Equal('A', result["CharVal"]);
         Assert.Equal("Test String", result["StringVal"]);
         Assert.Equal(3.14f, result["FloatVal"]);
         Assert.Equal(3.141592653589793, result["DoubleVal"]);

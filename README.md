@@ -5,7 +5,7 @@ A simple embedded database engine in C# and .NET 10 demonstrating B+ tree data s
 ## Features
 
 - **B+ Tree Implementation**: Efficient indexing and range queries using B+ trees
-- **Multiple Data Types**: Support for byte, int, long, bool, string, float, double, and DateTime
+- **Multiple Data Types**: Support for byte, sbyte, short, ushort, int, uint, long, ulong, bool, char, string, float, double, decimal, and DateTime
 - **File Storage**: Data persisted to `.mde` files with page-based storage
 - **LINQ Support**: Query data using LINQ for intuitive data access
 - **Thread-Safe**: All data modification operations are protected with reader-writer locks
@@ -101,13 +101,20 @@ db.Delete("Users", key: 1);
 
 The engine supports the following data types:
 
-- `DataType.Byte` - 8-bit unsigned integer
+- `DataType.Byte` - 8-bit unsigned integer (0 to 255)
+- `DataType.SByte` - 8-bit signed integer (-128 to 127)
+- `DataType.Short` - 16-bit signed integer (-32,768 to 32,767)
+- `DataType.UShort` - 16-bit unsigned integer (0 to 65,535)
 - `DataType.Int` - 32-bit signed integer
+- `DataType.UInt` - 32-bit unsigned integer
 - `DataType.Long` - 64-bit signed integer
+- `DataType.ULong` - 64-bit unsigned integer
 - `DataType.Bool` - Boolean value
+- `DataType.Char` - Single Unicode character
 - `DataType.String` - Variable-length string
 - `DataType.Float` - Single-precision floating point
 - `DataType.Double` - Double-precision floating point
+- `DataType.Decimal` - High-precision decimal number
 - `DataType.DateTime` - Date and time
 
 ## Thread Safety

@@ -6,9 +6,15 @@ namespace MiniDatabaseEngine;
 public enum DataType
 {
     Byte,
+    SByte,
+    Short,
+    UShort,
     Int,
+    UInt,
     Long,
+    ULong,
     Bool,
+    Char,
     String,
     Float,
     Double,
