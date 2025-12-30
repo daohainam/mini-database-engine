@@ -12,5 +12,6 @@ public enum DataType
     String,
     Float,
     Double,
+    Decimal,
     DateTime
 }

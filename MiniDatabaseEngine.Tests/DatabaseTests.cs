@@ -147,6 +147,7 @@ public class DatabaseTests : IDisposable
             new("StringVal", DataType.String),
             new("FloatVal", DataType.Float),
             new("DoubleVal", DataType.Double),
+            new("DecimalVal", DataType.Decimal),
             new("DateTimeVal", DataType.DateTime)
         };
         
@@ -160,6 +161,7 @@ public class DatabaseTests : IDisposable
         row["StringVal"] = "Test String";
         row["FloatVal"] = 3.14f;
         row["DoubleVal"] = 3.141592653589793;
+        row["DecimalVal"] = 1234567890.123456789m;
         row["DateTimeVal"] = new DateTime(2023, 12, 25, 10, 30, 0);
         
         _database.Insert("AllTypes", row);
@@ -172,6 +174,7 @@ public class DatabaseTests : IDisposable
         Assert.Equal("Test String", result["StringVal"]);
         Assert.Equal(3.14f, result["FloatVal"]);
         Assert.Equal(3.141592653589793, result["DoubleVal"]);
+        Assert.Equal(1234567890.123456789m, result["DecimalVal"]);
         Assert.Equal(new DateTime(2023, 12, 25, 10, 30, 0), result["DateTimeVal"]);
     }
     

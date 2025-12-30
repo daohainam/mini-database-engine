@@ -80,7 +80,8 @@ var typeColumns = new List<ColumnDefinition>
     new("StringVal", DataType.String),
     new("FloatVal", DataType.Float),
     new("DoubleVal", DataType.Double),
-    new("DateTimeVal", DataType.DateTime)
+    new("DecimalVal", DataType.Decimal),
+    new("DateTimeVal", DataType.DateTime),
 };
 
 var typesTable = db.CreateTable("AllTypes", typeColumns, "Id");
@@ -93,6 +94,7 @@ typeRow["BoolVal"] = true;
 typeRow["StringVal"] = "Hello, World! 🌍";
 typeRow["FloatVal"] = 3.14159f;
 typeRow["DoubleVal"] = 2.718281828459045;
+typeRow["DecimalVal"] = 12345.6789m;
 typeRow["DateTimeVal"] = new DateTime(2024, 1, 1, 12, 0, 0);
 
 db.Insert("AllTypes", typeRow);
@@ -105,6 +107,7 @@ Console.WriteLine($"   - Bool: {retrieved?["BoolVal"]}");
 Console.WriteLine($"   - String: {retrieved?["StringVal"]}");
 Console.WriteLine($"   - Float: {retrieved?["FloatVal"]}");
 Console.WriteLine($"   - Double: {retrieved?["DoubleVal"]}");
+Console.WriteLine($"   - Decimal: {retrieved?["DecimalVal"]}");
 Console.WriteLine($"   - DateTime: {retrieved?["DateTimeVal"]}\n");
 
 Console.WriteLine("7. Testing concurrent access...");

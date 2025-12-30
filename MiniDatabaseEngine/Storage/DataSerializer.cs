@@ -41,6 +41,9 @@ public static class DataSerializer
             case DataType.Double:
                 writer.Write((double)value);
                 break;
+            case DataType.Decimal:
+                writer.Write((decimal)value);
+                break;
             case DataType.DateTime:
                 writer.Write(((DateTime)value).ToBinary());
                 break;
@@ -76,6 +79,8 @@ public static class DataSerializer
                 return reader.ReadSingle();
             case DataType.Double:
                 return reader.ReadDouble();
+            case DataType.Decimal:
+                return reader.ReadDecimal();
             case DataType.DateTime:
                 return DateTime.FromBinary(reader.ReadInt64());
             default:
@@ -105,6 +110,8 @@ public static class DataSerializer
                 return ((float)a).CompareTo((float)b);
             case DataType.Double:
                 return ((double)a).CompareTo((double)b);
+            case DataType.Decimal:
+                return ((decimal)a).CompareTo((decimal)b);
             case DataType.DateTime:
                 return ((DateTime)a).CompareTo((DateTime)b);
             default:
