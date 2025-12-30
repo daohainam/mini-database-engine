@@ -85,7 +85,21 @@ public class WALManager : IDisposable
             try
             {
                 int length = reader.ReadInt32();
+                
+                // Validate length to prevent excessive memory allocation
+                if (length <= 0 || length > 1024 * 1024) // Max 1MB per entry
+                {
+                    // Corrupted WAL file - stop reading
+                    break;
+                }
+                
                 byte[] data = reader.ReadBytes(length);
+                if (data.Length != length)
+                {
+                    // Incomplete entry - stop reading
+                    break;
+                }
+                
                 var entry = WALEntry.Deserialize(data);
                 entries.Add(entry);
             }
@@ -107,7 +121,7 @@ public class WALManager : IDisposable
         _lock.EnterReadLock();
         try
         {
-            var allEntries = ReadAllEntries();
+            var allEntries = ReadAllEntriesInternal();
             return allEntries.Where(e => e.SequenceNumber > sequenceNumber).ToList();
         }
         finally

@@ -171,6 +171,26 @@ public class WALEntry
                 writer.Write((byte)9);
                 writer.Write(ul);
                 break;
+            case sbyte sb:
+                writer.Write((byte)10);
+                writer.Write(sb);
+                break;
+            case ushort us:
+                writer.Write((byte)11);
+                writer.Write(us);
+                break;
+            case char c:
+                writer.Write((byte)12);
+                writer.Write(c);
+                break;
+            case decimal dec:
+                writer.Write((byte)13);
+                writer.Write(dec);
+                break;
+            case DateTime dt:
+                writer.Write((byte)14);
+                writer.Write(dt.ToBinary());
+                break;
             default:
                 throw new NotSupportedException($"Type {obj.GetType()} not supported for key serialization");
         }
@@ -191,6 +211,11 @@ public class WALEntry
             7 => reader.ReadInt16(),
             8 => reader.ReadUInt32(),
             9 => reader.ReadUInt64(),
+            10 => reader.ReadSByte(),
+            11 => reader.ReadUInt16(),
+            12 => reader.ReadChar(),
+            13 => reader.ReadDecimal(),
+            14 => DateTime.FromBinary(reader.ReadInt64()),
             _ => throw new NotSupportedException($"Type code {typeCode} not supported")
         };
     }
