@@ -1,5 +1,6 @@
 using MiniDatabaseEngine.BPlusTree;
 using MiniDatabaseEngine.Storage;
+using MiniDatabaseEngine.Transaction;
 using System.Collections;
 
 namespace MiniDatabaseEngine;
@@ -33,7 +34,7 @@ public class Table
     /// <summary>
     /// Insert a new row into the table
     /// </summary>
-    public void Insert(DataRow row)
+    public void Insert(DataRow row, Transaction.Transaction? transaction = null)
     {
         _lock.EnterWriteLock();
         try
@@ -42,6 +43,12 @@ public class Table
             
             // Serialize row data
             var serialized = SerializeRow(row);
+            
+            // Log to transaction if active
+            if (transaction != null)
+            {
+                transaction.LogInsert(_schema.TableName, key, serialized);
+            }
             
             // Store in B+ Tree
             _index.Insert(key, serialized);
@@ -56,7 +63,7 @@ public class Table
     /// <summary>
     /// Update a row by primary key
     /// </summary>
-    public bool Update(object key, DataRow row)
+    public bool Update(object key, DataRow row, Transaction.Transaction? transaction = null)
     {
         _lock.EnterWriteLock();
         try
@@ -65,7 +72,15 @@ public class Table
             if (existing == null)
                 return false;
             
+            var oldValue = (byte[])existing;
             var serialized = SerializeRow(row);
+            
+            // Log to transaction if active
+            if (transaction != null)
+            {
+                transaction.LogUpdate(_schema.TableName, key, oldValue, serialized);
+            }
+            
             _index.Insert(key, serialized);
             return true;
         }
@@ -78,12 +93,47 @@ public class Table
     /// <summary>
     /// Delete a row by primary key
     /// </summary>
-    public bool Delete(object key)
+    public bool Delete(object key, Transaction.Transaction? transaction = null)
     {
         _lock.EnterWriteLock();
         try
         {
+            var existing = _index.Search(key);
+            if (existing == null)
+                return false;
+            
+            var oldValue = (byte[])existing;
+            
+            // Log to transaction if active
+            if (transaction != null)
+            {
+                transaction.LogDelete(_schema.TableName, key, oldValue);
+            }
+            
             return _index.Delete(key);
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
+    }
+    
+    /// <summary>
+    /// Apply a WAL entry to the table (used during recovery)
+    /// </summary>
+    internal void ApplyWALEntry(object key, byte[]? value, bool isDelete)
+    {
+        _lock.EnterWriteLock();
+        try
+        {
+            if (isDelete)
+            {
+                _index.Delete(key);
+            }
+            else if (value != null)
+            {
+                _index.Insert(key, value);
+            }
         }
         finally
         {

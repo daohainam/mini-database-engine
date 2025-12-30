@@ -1,5 +1,6 @@
 using MiniDatabaseEngine.Linq;
 using MiniDatabaseEngine.Storage;
+using MiniDatabaseEngine.Transaction;
 using System.Collections.Concurrent;
 
 namespace MiniDatabaseEngine;
@@ -12,6 +13,9 @@ public class Database : IDisposable
     private readonly StorageEngine _storage;
     private readonly ConcurrentDictionary<string, Table> _tables;
     private readonly ReaderWriterLockSlim _lock;
+    private readonly WALManager _walManager;
+    private readonly TransactionManager _transactionManager;
+    private readonly string _filePath;
     
     public Database(string filePath, int cacheSize = 100, bool useMemoryMappedFile = false)
     {
@@ -21,9 +25,15 @@ public class Database : IDisposable
         if (!filePath.EndsWith(".mde", StringComparison.OrdinalIgnoreCase))
             filePath += ".mde";
         
+        _filePath = filePath;
         _storage = new StorageEngine(filePath, cacheSize, useMemoryMappedFile);
         _tables = new ConcurrentDictionary<string, Table>();
         _lock = new ReaderWriterLockSlim();
+        _walManager = new WALManager(filePath);
+        _transactionManager = new TransactionManager(_walManager);
+        
+        // Recover from WAL if needed
+        RecoverFromWAL();
     }
     
     /// <summary>
@@ -78,30 +88,48 @@ public class Database : IDisposable
     }
     
     /// <summary>
-    /// Insert a row into a table
+    /// Begin a new transaction
     /// </summary>
-    public void Insert(string tableName, DataRow row)
+    public Transaction.Transaction BeginTransaction()
     {
-        var table = GetTable(tableName);
-        table.Insert(row);
+        return _transactionManager.BeginTransaction();
     }
     
     /// <summary>
-    /// Update a row in a table
+    /// Insert a row into a table within a transaction
     /// </summary>
-    public bool Update(string tableName, object key, DataRow row)
+    public void Insert(string tableName, DataRow row, Transaction.Transaction? transaction = null)
     {
         var table = GetTable(tableName);
-        return table.Update(key, row);
+        table.Insert(row, transaction);
     }
     
     /// <summary>
-    /// Delete a row from a table
+    /// Update a row in a table within a transaction
     /// </summary>
-    public bool Delete(string tableName, object key)
+    public bool Update(string tableName, object key, DataRow row, Transaction.Transaction? transaction = null)
     {
         var table = GetTable(tableName);
-        return table.Delete(key);
+        return table.Update(key, row, transaction);
+    }
+    
+    /// <summary>
+    /// Delete a row from a table within a transaction
+    /// </summary>
+    public bool Delete(string tableName, object key, Transaction.Transaction? transaction = null)
+    {
+        var table = GetTable(tableName);
+        return table.Delete(key, transaction);
+    }
+    
+    /// <summary>
+    /// Perform a checkpoint - flush all data and truncate WAL
+    /// </summary>
+    public void Checkpoint()
+    {
+        _storage.Flush();
+        _walManager.Checkpoint();
+        _walManager.TruncateAfterCheckpoint();
     }
     
     /// <summary>
@@ -110,10 +138,49 @@ public class Database : IDisposable
     public void Flush()
     {
         _storage.Flush();
+        _walManager.Flush();
+    }
+    
+    /// <summary>
+    /// Recover from WAL on database startup
+    /// </summary>
+    private void RecoverFromWAL()
+    {
+        _transactionManager.RecoverFromWAL(entry =>
+        {
+            if (!_tables.TryGetValue(entry.TableName, out var table))
+                return;
+
+            switch (entry.OperationType)
+            {
+                case WALOperationType.Insert:
+                    if (entry.NewValue != null && entry.Key != null)
+                    {
+                        table.ApplyWALEntry(entry.Key, entry.NewValue, isDelete: false);
+                    }
+                    break;
+
+                case WALOperationType.Update:
+                    if (entry.NewValue != null && entry.Key != null)
+                    {
+                        table.ApplyWALEntry(entry.Key, entry.NewValue, isDelete: false);
+                    }
+                    break;
+
+                case WALOperationType.Delete:
+                    if (entry.Key != null)
+                    {
+                        table.ApplyWALEntry(entry.Key, null, isDelete: true);
+                    }
+                    break;
+            }
+        });
     }
     
     public void Dispose()
     {
+        _transactionManager?.Dispose();
+        _walManager?.Dispose();
         _lock?.Dispose();
         _storage?.Dispose();
     }
