@@ -22,14 +22,32 @@ public static class DataSerializer
             case DataType.Byte:
                 writer.Write((byte)value);
                 break;
+            case DataType.SByte:
+                writer.Write((sbyte)value);
+                break;
+            case DataType.Short:
+                writer.Write((short)value);
+                break;
+            case DataType.UShort:
+                writer.Write((ushort)value);
+                break;
             case DataType.Int:
                 writer.Write((int)value);
+                break;
+            case DataType.UInt:
+                writer.Write((uint)value);
                 break;
             case DataType.Long:
                 writer.Write((long)value);
                 break;
+            case DataType.ULong:
+                writer.Write((ulong)value);
+                break;
             case DataType.Bool:
                 writer.Write((bool)value);
+                break;
+            case DataType.Char:
+                writer.Write((char)value);
                 break;
             case DataType.String:
                 var str = (string)value;
@@ -67,12 +85,24 @@ public static class DataSerializer
         {
             case DataType.Byte:
                 return reader.ReadByte();
+            case DataType.SByte:
+                return reader.ReadSByte();
+            case DataType.Short:
+                return reader.ReadInt16();
+            case DataType.UShort:
+                return reader.ReadUInt16();
             case DataType.Int:
                 return reader.ReadInt32();
+            case DataType.UInt:
+                return reader.ReadUInt32();
             case DataType.Long:
                 return reader.ReadInt64();
+            case DataType.ULong:
+                return reader.ReadUInt64();
             case DataType.Bool:
                 return reader.ReadBoolean();
+            case DataType.Char:
+                return reader.ReadChar();
             case DataType.String:
                 return reader.ReadString();
             case DataType.Float:
@@ -98,12 +128,24 @@ public static class DataSerializer
         {
             case DataType.Byte:
                 return ((byte)a).CompareTo((byte)b);
+            case DataType.SByte:
+                return ((sbyte)a).CompareTo((sbyte)b);
+            case DataType.Short:
+                return ((short)a).CompareTo((short)b);
+            case DataType.UShort:
+                return ((ushort)a).CompareTo((ushort)b);
             case DataType.Int:
                 return ((int)a).CompareTo((int)b);
+            case DataType.UInt:
+                return ((uint)a).CompareTo((uint)b);
             case DataType.Long:
                 return ((long)a).CompareTo((long)b);
+            case DataType.ULong:
+                return ((ulong)a).CompareTo((ulong)b);
             case DataType.Bool:
                 return ((bool)a).CompareTo((bool)b);
+            case DataType.Char:
+                return ((char)a).CompareTo((char)b);
             case DataType.String:
                 return string.Compare((string)a, (string)b, StringComparison.Ordinal);
             case DataType.Float:

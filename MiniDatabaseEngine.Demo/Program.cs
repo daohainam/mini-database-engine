@@ -75,8 +75,14 @@ var typeColumns = new List<ColumnDefinition>
 {
     new("Id", DataType.Int, false),
     new("ByteVal", DataType.Byte),
+    new("SByteVal", DataType.SByte),
+    new("ShortVal", DataType.Short),
+    new("UShortVal", DataType.UShort),
+    new("UIntVal", DataType.UInt),
     new("LongVal", DataType.Long),
+    new("ULongVal", DataType.ULong),
     new("BoolVal", DataType.Bool),
+    new("CharVal", DataType.Char),
     new("StringVal", DataType.String),
     new("FloatVal", DataType.Float),
     new("DoubleVal", DataType.Double),
@@ -89,8 +95,14 @@ var typesTable = db.CreateTable("AllTypes", typeColumns, "Id");
 var typeRow = new DataRow(typesTable.Schema);
 typeRow["Id"] = 1;
 typeRow["ByteVal"] = (byte)255;
+typeRow["SByteVal"] = (sbyte)-128;
+typeRow["ShortVal"] = (short)-32768;
+typeRow["UShortVal"] = (ushort)65535;
+typeRow["UIntVal"] = (uint)4294967295;
 typeRow["LongVal"] = 9223372036854775807L;
+typeRow["ULongVal"] = 18446744073709551615UL;
 typeRow["BoolVal"] = true;
+typeRow["CharVal"] = 'A';
 typeRow["StringVal"] = "Hello, World! 🌍";
 typeRow["FloatVal"] = 3.14159f;
 typeRow["DoubleVal"] = 2.718281828459045;
@@ -102,8 +114,14 @@ db.Insert("AllTypes", typeRow);
 var retrieved = typesTable.SelectByKey(1);
 Console.WriteLine("   ✓ All data types stored and retrieved correctly:");
 Console.WriteLine($"   - Byte: {retrieved?["ByteVal"]}");
+Console.WriteLine($"   - SByte: {retrieved?["SByteVal"]}");
+Console.WriteLine($"   - Short: {retrieved?["ShortVal"]}");
+Console.WriteLine($"   - UShort: {retrieved?["UShortVal"]}");
+Console.WriteLine($"   - UInt: {retrieved?["UIntVal"]}");
 Console.WriteLine($"   - Long: {retrieved?["LongVal"]}");
+Console.WriteLine($"   - ULong: {retrieved?["ULongVal"]}");
 Console.WriteLine($"   - Bool: {retrieved?["BoolVal"]}");
+Console.WriteLine($"   - Char: {retrieved?["CharVal"]}");
 Console.WriteLine($"   - String: {retrieved?["StringVal"]}");
 Console.WriteLine($"   - Float: {retrieved?["FloatVal"]}");
 Console.WriteLine($"   - Double: {retrieved?["DoubleVal"]}");
