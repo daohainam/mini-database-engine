@@ -18,8 +18,8 @@ public class DatabaseTests : IDisposable
     {
         var columns = new List<ColumnDefinition>
         {
-            new ColumnDefinition("Id", DataType.Int, false),
-            new ColumnDefinition("Name", DataType.String)
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String)
         };
         
         var table = _database.CreateTable("Users", columns, "Id");
@@ -34,9 +34,9 @@ public class DatabaseTests : IDisposable
     {
         var columns = new List<ColumnDefinition>
         {
-            new ColumnDefinition("Id", DataType.Int, false),
-            new ColumnDefinition("Name", DataType.String),
-            new ColumnDefinition("Age", DataType.Int)
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String),
+            new("Age", DataType.Int)
         };
         
         var table = _database.CreateTable("Users", columns, "Id");
@@ -65,8 +65,8 @@ public class DatabaseTests : IDisposable
     {
         var columns = new List<ColumnDefinition>
         {
-            new ColumnDefinition("Id", DataType.Int, false),
-            new ColumnDefinition("Name", DataType.String)
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String)
         };
         
         var table = _database.CreateTable("Users", columns, "Id");
@@ -92,8 +92,8 @@ public class DatabaseTests : IDisposable
     {
         var columns = new List<ColumnDefinition>
         {
-            new ColumnDefinition("Id", DataType.Int, false),
-            new ColumnDefinition("Name", DataType.String)
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String)
         };
         
         var table = _database.CreateTable("Users", columns, "Id");
@@ -115,9 +115,9 @@ public class DatabaseTests : IDisposable
     {
         var columns = new List<ColumnDefinition>
         {
-            new ColumnDefinition("Id", DataType.Int, false),
-            new ColumnDefinition("Name", DataType.String),
-            new ColumnDefinition("Age", DataType.Int)
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String),
+            new("Age", DataType.Int)
         };
         
         var table = _database.CreateTable("Users", columns, "Id");
@@ -140,14 +140,14 @@ public class DatabaseTests : IDisposable
     {
         var columns = new List<ColumnDefinition>
         {
-            new ColumnDefinition("Id", DataType.Int, false),
-            new ColumnDefinition("ByteVal", DataType.Byte),
-            new ColumnDefinition("LongVal", DataType.Long),
-            new ColumnDefinition("BoolVal", DataType.Bool),
-            new ColumnDefinition("StringVal", DataType.String),
-            new ColumnDefinition("FloatVal", DataType.Float),
-            new ColumnDefinition("DoubleVal", DataType.Double),
-            new ColumnDefinition("DateTimeVal", DataType.DateTime)
+            new("Id", DataType.Int, false),
+            new("ByteVal", DataType.Byte),
+            new("LongVal", DataType.Long),
+            new("BoolVal", DataType.Bool),
+            new("StringVal", DataType.String),
+            new("FloatVal", DataType.Float),
+            new("DoubleVal", DataType.Double),
+            new("DateTimeVal", DataType.DateTime)
         };
         
         var table = _database.CreateTable("AllTypes", columns, "Id");

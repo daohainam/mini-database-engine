@@ -18,8 +18,8 @@ public class ConcurrencyTests : IDisposable
     {
         var columns = new List<ColumnDefinition>
         {
-            new ColumnDefinition("Id", DataType.Int, false),
-            new ColumnDefinition("Value", DataType.String)
+            new("Id", DataType.Int, false),
+            new("Value", DataType.String)
         };
         
         var table = _database.CreateTable("ConcurrentTest", columns, "Id");
@@ -48,8 +48,8 @@ public class ConcurrencyTests : IDisposable
     {
         var columns = new List<ColumnDefinition>
         {
-            new ColumnDefinition("Id", DataType.Int, false),
-            new ColumnDefinition("Counter", DataType.Int)
+            new("Id", DataType.Int, false),
+            new("Counter", DataType.Int)
         };
         
         var table = _database.CreateTable("ReadWriteTest", columns, "Id");

@@ -9,7 +9,7 @@ public class PageCache
 {
     private readonly int _capacity;
     private readonly ConcurrentDictionary<int, CacheNode> _cache;
-    private readonly object _lockObject = new object();
+    private readonly Lock _lockObject = new();
     
     private CacheNode? _head;
     private CacheNode? _tail;

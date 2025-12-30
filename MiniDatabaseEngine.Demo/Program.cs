@@ -12,13 +12,13 @@ using var db = new Database(dbPath, cacheSize: 100, useMemoryMappedFile: false);
 Console.WriteLine("1. Creating a 'Users' table...");
 var userColumns = new List<ColumnDefinition>
 {
-    new ColumnDefinition("Id", DataType.Int, false),
-    new ColumnDefinition("Name", DataType.String),
-    new ColumnDefinition("Email", DataType.String),
-    new ColumnDefinition("Age", DataType.Int),
-    new ColumnDefinition("IsActive", DataType.Bool),
-    new ColumnDefinition("Balance", DataType.Double),
-    new ColumnDefinition("CreatedAt", DataType.DateTime)
+    new("Id", DataType.Int, false),
+    new("Name", DataType.String),
+    new("Email", DataType.String),
+    new("Age", DataType.Int),
+    new("IsActive", DataType.Bool),
+    new("Balance", DataType.Double),
+    new("CreatedAt", DataType.DateTime)
 };
 
 var usersTable = db.CreateTable("Users", userColumns, "Id");
@@ -73,14 +73,14 @@ Console.WriteLine("   ✓ User with Id=5 deleted\n");
 Console.WriteLine("6. Testing all data types...");
 var typeColumns = new List<ColumnDefinition>
 {
-    new ColumnDefinition("Id", DataType.Int, false),
-    new ColumnDefinition("ByteVal", DataType.Byte),
-    new ColumnDefinition("LongVal", DataType.Long),
-    new ColumnDefinition("BoolVal", DataType.Bool),
-    new ColumnDefinition("StringVal", DataType.String),
-    new ColumnDefinition("FloatVal", DataType.Float),
-    new ColumnDefinition("DoubleVal", DataType.Double),
-    new ColumnDefinition("DateTimeVal", DataType.DateTime)
+    new("Id", DataType.Int, false),
+    new("ByteVal", DataType.Byte),
+    new("LongVal", DataType.Long),
+    new("BoolVal", DataType.Bool),
+    new("StringVal", DataType.String),
+    new("FloatVal", DataType.Float),
+    new("DoubleVal", DataType.Double),
+    new("DateTimeVal", DataType.DateTime)
 };
 
 var typesTable = db.CreateTable("AllTypes", typeColumns, "Id");

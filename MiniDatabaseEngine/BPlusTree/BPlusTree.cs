@@ -11,7 +11,7 @@ public class BPlusTree
     private readonly DataType _keyType;
     private readonly IComparer<object> _comparer;
     private BPlusTreeNode _root;
-    private readonly object _lockObject = new object();
+    private readonly object _lockObject = new();
     
     public BPlusTree(int order, DataType keyType)
     {
