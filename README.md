@@ -1,10 +1,12 @@
 # Mini Database Engine
 
-A simple embedded database engine in C# and .NET 10 demonstrating B+ tree data structures for efficient data storage and retrieval.
+A simple embedded database engine in C# and .NET 10 demonstrating B+ tree data structures for efficient data storage and retrieval with ACID transaction support.
 
 ## Features
 
 - **B+ Tree Implementation**: Efficient indexing and range queries using B+ trees
+- **ACID Transactions**: Full ACID transaction support with Write-Ahead Logging (WAL)
+- **Crash Recovery**: Automatic recovery from WAL on database restart
 - **Multiple Data Types**: Support for byte, sbyte, short, ushort, int, uint, long, ulong, bool, char, string, float, double, decimal, and DateTime
 - **File Storage**: Data persisted to `.mde` files with page-based storage
 - **LINQ Support**: Query data using LINQ for intuitive data access
@@ -18,6 +20,7 @@ A simple embedded database engine in C# and .NET 10 demonstrating B+ tree data s
 MiniDatabaseEngine/           # Main library
 ├── BPlusTree/               # B+ tree implementation
 ├── Storage/                 # Storage engine and serialization
+├── Transaction/             # Transaction management and WAL
 ├── Linq/                    # LINQ query provider
 ├── DataType.cs              # Supported data types
 ├── ColumnDefinition.cs      # Column schema definition
@@ -97,6 +100,104 @@ db.Update("Users", key: 1, updatedRow);
 db.Delete("Users", key: 1);
 ```
 
+### Using Transactions
+
+#### Basic Transaction with Commit
+
+```csharp
+// Begin a transaction
+using var txn = db.BeginTransaction();
+
+// Perform multiple operations within the transaction
+var row1 = new DataRow(table.Schema);
+row1["Id"] = 1;
+row1["Name"] = "Alice";
+db.Insert("Users", row1, txn);
+
+var row2 = new DataRow(table.Schema);
+row2["Id"] = 2;
+row2["Name"] = "Bob";
+db.Insert("Users", row2, txn);
+
+// Commit the transaction to make changes permanent
+txn.Commit();
+```
+
+#### Transaction with Rollback
+
+```csharp
+using var txn = db.BeginTransaction();
+
+// Perform operations
+db.Insert("Users", row, txn);
+db.Update("Users", key: 1, updatedRow, txn);
+
+// Rollback to undo all changes
+txn.Rollback();
+```
+
+#### Automatic Rollback
+
+```csharp
+// Transaction automatically rolls back if not committed
+using (var txn = db.BeginTransaction())
+{
+    db.Insert("Users", row, txn);
+    // If an exception occurs here, transaction is rolled back
+    throw new Exception("Something went wrong");
+} // Transaction is automatically rolled back on disposal
+```
+
+#### Bank Transfer Example (Atomicity)
+
+```csharp
+// Transfer money between accounts - either both operations succeed or both fail
+using var txn = db.BeginTransaction();
+
+try
+{
+    // Debit from account 1
+    var account1 = accountsTable.SelectByKey(1);
+    account1["Balance"] = (double)account1["Balance"] - 100.0;
+    db.Update("Accounts", 1, account1, txn);
+    
+    // Credit to account 2
+    var account2 = accountsTable.SelectByKey(2);
+    account2["Balance"] = (double)account2["Balance"] + 100.0;
+    db.Update("Accounts", 2, account2, txn);
+    
+    // Commit both changes atomically
+    txn.Commit();
+}
+catch
+{
+    txn.Rollback();
+    throw;
+}
+```
+
+#### Checkpoint
+
+```csharp
+// Flush all data and create a checkpoint in the WAL
+db.Checkpoint();
+```
+
+### Crash Recovery
+
+The database automatically recovers from crashes by replaying committed transactions from the Write-Ahead Log (WAL):
+
+```csharp
+// After a crash, simply reopen the database
+using var db = new Database("mydata.mde");
+
+// Recreate tables with same schema
+var table = db.CreateTable("Users", columns, "Id");
+
+// Data from committed transactions is automatically recovered
+var user = table.SelectByKey(1); // Returns data from WAL
+```
+
 ### Supported Data Types
 
 The engine supports the following data types:
@@ -117,13 +218,25 @@ The engine supports the following data types:
 - `DataType.Decimal` - High-precision decimal number
 - `DataType.DateTime` - Date and time
 
-## Thread Safety
+## Thread Safety & ACID Properties
+
+### Thread Safety
 
 All data modification operations (Insert, Update, Delete) are thread-safe and use reader-writer locks to ensure data consistency. Multiple threads can safely:
 
 - Read data concurrently
-- Insert data concurrently
+- Insert data concurrently  
 - Perform mixed read/write operations
+- Execute independent transactions concurrently
+
+### ACID Guarantees
+
+The database provides full ACID transaction support:
+
+- **Atomicity**: All operations in a transaction either succeed together or fail together
+- **Consistency**: Database remains in a valid state before and after transactions
+- **Isolation**: Concurrent transactions are isolated from each other (implemented via locking)
+- **Durability**: Committed transactions are persisted via Write-Ahead Logging (WAL) and survive crashes
 
 ## Architecture
 
@@ -141,6 +254,14 @@ The B+ tree implementation provides:
 - **LRU cache**: Frequently accessed pages kept in memory
 - **Optional memory-mapped files**: For improved performance with larger datasets
 - **Flush on demand**: Explicit control over when data is written to disk
+
+### Transaction Management
+
+- **Write-Ahead Logging (WAL)**: All modifications are logged before being applied
+- **Transaction isolation**: Reader-writer locks ensure transaction isolation
+- **Automatic recovery**: Replays committed transactions from WAL on startup
+- **Rollback support**: Uncommitted transactions are rolled back using undo operations
+- **Checkpoint mechanism**: Marks points where all data has been flushed to disk
 
 ### LINQ Provider
 
