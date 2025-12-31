@@ -50,6 +50,7 @@ public class DatabaseBenchmarks
         _largeRecordTable = _db.CreateTable("LargeRecords", largeColumns, "Id");
 
         // Pre-populate tables for read benchmarks
+        var baseDate = new DateTime(2024, 1, 1);
         for (int i = 1; i <= RecordCount; i++)
         {
             var smallRow = new DataRow(_smallRecordTable.Schema);
@@ -65,8 +66,8 @@ public class DatabaseBenchmarks
             largeRow["Age"] = 20 + (i % 50);
             largeRow["IsActive"] = i % 2 == 0;
             largeRow["Balance"] = 1000.0 * i;
-            largeRow["CreatedAt"] = DateTime.Now.AddDays(-i);
-            largeRow["UpdatedAt"] = DateTime.Now;
+            largeRow["CreatedAt"] = baseDate.AddDays(-i);
+            largeRow["UpdatedAt"] = baseDate;
             largeRow["Description"] = $"This is a longer description for user {i} with some additional text to make the record larger.";
             largeRow["Address"] = $"{i} Main Street";
             largeRow["City"] = "Sample City";
@@ -87,25 +88,29 @@ public class DatabaseBenchmarks
     }
 
     [Benchmark]
-    public void ReadSmallRecords()
+    public DataRow? ReadSmallRecords()
     {
-        if (_smallRecordTable == null) return;
+        if (_smallRecordTable == null) return null;
 
+        DataRow? lastRecord = null;
         for (int i = 1; i <= 100; i++)
         {
-            var record = _smallRecordTable.SelectByKey(i);
+            lastRecord = _smallRecordTable.SelectByKey(i);
         }
+        return lastRecord;
     }
 
     [Benchmark]
-    public void ReadLargeRecords()
+    public DataRow? ReadLargeRecords()
     {
-        if (_largeRecordTable == null) return;
+        if (_largeRecordTable == null) return null;
 
+        DataRow? lastRecord = null;
         for (int i = 1; i <= 100; i++)
         {
-            var record = _largeRecordTable.SelectByKey(i);
+            lastRecord = _largeRecordTable.SelectByKey(i);
         }
+        return lastRecord;
     }
 
     [Benchmark]
@@ -134,6 +139,7 @@ public class DatabaseBenchmarks
     {
         if (_db == null || _largeRecordTable == null) return;
 
+        var baseDate = new DateTime(2024, 1, 1);
         for (int i = RecordCount + 1; i <= RecordCount + 100; i++)
         {
             var row = new DataRow(_largeRecordTable.Schema);
@@ -143,8 +149,8 @@ public class DatabaseBenchmarks
             row["Age"] = 20 + (i % 50);
             row["IsActive"] = i % 2 == 0;
             row["Balance"] = 1000.0 * i;
-            row["CreatedAt"] = DateTime.Now.AddDays(-i);
-            row["UpdatedAt"] = DateTime.Now;
+            row["CreatedAt"] = baseDate.AddDays(-i);
+            row["UpdatedAt"] = baseDate;
             row["Description"] = $"This is a longer description for user {i} with some additional text to make the record larger.";
             row["Address"] = $"{i} Main Street";
             row["City"] = "Sample City";
@@ -192,6 +198,7 @@ public class DatabaseBenchmarks
     {
         if (_db == null || _largeRecordTable == null) return;
 
+        var baseDate = new DateTime(2024, 1, 1);
         for (int i = 1; i <= 100; i++)
         {
             var row = new DataRow(_largeRecordTable.Schema);
@@ -201,8 +208,8 @@ public class DatabaseBenchmarks
             row["Age"] = 30 + (i % 50);
             row["IsActive"] = i % 3 == 0;
             row["Balance"] = 2000.0 * i;
-            row["CreatedAt"] = DateTime.Now.AddDays(-i);
-            row["UpdatedAt"] = DateTime.Now;
+            row["CreatedAt"] = baseDate.AddDays(-i);
+            row["UpdatedAt"] = baseDate;
             row["Description"] = $"Updated description for user {i}";
             row["Address"] = $"{i} Updated Street";
             row["City"] = "Updated City";
@@ -223,8 +230,8 @@ public class DatabaseBenchmarks
             row["Age"] = 20 + (i % 50);
             row["IsActive"] = i % 2 == 0;
             row["Balance"] = 1000.0 * i;
-            row["CreatedAt"] = DateTime.Now.AddDays(-i);
-            row["UpdatedAt"] = DateTime.Now;
+            row["CreatedAt"] = baseDate.AddDays(-i);
+            row["UpdatedAt"] = baseDate;
             row["Description"] = $"This is a longer description for user {i} with some additional text to make the record larger.";
             row["Address"] = $"{i} Main Street";
             row["City"] = "Sample City";
@@ -270,6 +277,7 @@ public class DatabaseBenchmarks
         }
 
         // Re-insert records
+        var baseDate = new DateTime(2024, 1, 1);
         for (int i = 1; i <= 100; i++)
         {
             var row = new DataRow(_largeRecordTable.Schema);
@@ -279,8 +287,8 @@ public class DatabaseBenchmarks
             row["Age"] = 20 + (i % 50);
             row["IsActive"] = i % 2 == 0;
             row["Balance"] = 1000.0 * i;
-            row["CreatedAt"] = DateTime.Now.AddDays(-i);
-            row["UpdatedAt"] = DateTime.Now;
+            row["CreatedAt"] = baseDate.AddDays(-i);
+            row["UpdatedAt"] = baseDate;
             row["Description"] = $"This is a longer description for user {i} with some additional text to make the record larger.";
             row["Address"] = $"{i} Main Street";
             row["City"] = "Sample City";
