@@ -11,18 +11,22 @@ public class StorageEngine : IDisposable
     private readonly string _filePath;
     private readonly FileStream _fileStream;
     private readonly PageCache _cache;
+    private readonly ExtentCache _extentCache;
     private readonly bool _useMemoryMappedFile;
+    private readonly bool _useExtentCache;
     private MemoryMappedFile? _memoryMappedFile;
     private readonly ReaderWriterLockSlim _lock;
     
     public const int HeaderPageId = 0;
     private const int MagicNumber = 0x4D4445; // "MDE" in hex
     
-    public StorageEngine(string filePath, int cacheSize = 100, bool useMemoryMappedFile = false)
+    public StorageEngine(string filePath, int cacheSize = 100, bool useMemoryMappedFile = false, bool useExtentCache = true)
     {
         _filePath = filePath;
         _cache = new PageCache(cacheSize);
+        _extentCache = new ExtentCache(Math.Max(1, cacheSize / Extent.PagesPerExtent)); // Ensure at least 1 extent
         _useMemoryMappedFile = useMemoryMappedFile;
+        _useExtentCache = useExtentCache;
         _lock = new ReaderWriterLockSlim();
         
         bool isNewFile = !File.Exists(filePath);
@@ -72,37 +76,58 @@ public class StorageEngine : IDisposable
         _lock.EnterReadLock();
         try
         {
-            // Check cache first
-            var cachedPage = _cache.Get(pageId);
-            if (cachedPage != null)
-                return cachedPage;
-            
-            var page = new Page(pageId);
-            
-            if (_useMemoryMappedFile && _memoryMappedFile != null)
+            // Check extent cache first if enabled
+            if (_useExtentCache)
             {
-                using var accessor = _memoryMappedFile.CreateViewAccessor(
-                    pageId * Page.PageSize,
-                    Page.PageSize,
-                    MemoryMappedFileAccess.Read);
-                    
-                accessor.ReadArray(0, page.Data, 0, Page.PageSize);
+                var cachedPage = _extentCache.GetPage(pageId);
+                if (cachedPage != null)
+                    return cachedPage;
             }
             else
             {
-                _fileStream.Seek(pageId * Page.PageSize, SeekOrigin.Begin);
-                int totalRead = 0;
-                while (totalRead < Page.PageSize)
-                {
-                    int read = _fileStream.Read(page.Data, totalRead, Page.PageSize - totalRead);
-                    if (read == 0)
-                        break;
-                    totalRead += read;
-                }
+                // Check regular cache if extent cache is disabled
+                var cachedPage = _cache.Get(pageId);
+                if (cachedPage != null)
+                    return cachedPage;
             }
             
-            _cache.Put(pageId, page);
-            return page;
+            // If extent cache is enabled, try to read entire extent
+            if (_useExtentCache)
+            {
+                var extent = ReadExtent(Extent.GetExtentId(pageId));
+                _extentCache.PutExtent(extent.ExtentId, extent);
+                return extent.GetPage(pageId);
+            }
+            else
+            {
+                // Fallback to single page read
+                var page = new Page(pageId);
+                
+                if (_useMemoryMappedFile && _memoryMappedFile != null)
+                {
+                    using var accessor = _memoryMappedFile.CreateViewAccessor(
+                        pageId * Page.PageSize,
+                        Page.PageSize,
+                        MemoryMappedFileAccess.Read);
+                        
+                    accessor.ReadArray(0, page.Data, 0, Page.PageSize);
+                }
+                else
+                {
+                    _fileStream.Seek(pageId * Page.PageSize, SeekOrigin.Begin);
+                    int totalRead = 0;
+                    while (totalRead < Page.PageSize)
+                    {
+                        int read = _fileStream.Read(page.Data, totalRead, Page.PageSize - totalRead);
+                        if (read == 0)
+                            break;
+                        totalRead += read;
+                    }
+                }
+                
+                _cache.Put(pageId, page);
+                return page;
+            }
         }
         finally
         {
@@ -116,7 +141,16 @@ public class StorageEngine : IDisposable
         try
         {
             page.IsDirty = true;
-            _cache.Put(page.PageId, page);
+            
+            // Update both caches
+            if (_useExtentCache)
+            {
+                _extentCache.PutPage(page.PageId, page);
+            }
+            else
+            {
+                _cache.Put(page.PageId, page);
+            }
             
             if (_useMemoryMappedFile && _memoryMappedFile != null)
             {
@@ -175,13 +209,89 @@ public class StorageEngine : IDisposable
         }
     }
     
-    public void Flush()
+    /// <summary>
+    /// Reads an entire extent (8 pages) from the database file
+    /// </summary>
+    public Extent ReadExtent(int extentId)
+    {
+        var extent = new Extent(extentId);
+        
+        for (int i = 0; i < Extent.PagesPerExtent; i++)
+        {
+            int pageId = extent.StartPageId + i;
+            var page = extent.Pages[i];
+            
+            if (_useMemoryMappedFile && _memoryMappedFile != null)
+            {
+                try
+                {
+                    using var accessor = _memoryMappedFile.CreateViewAccessor(
+                        pageId * Page.PageSize,
+                        Page.PageSize,
+                        MemoryMappedFileAccess.Read);
+                        
+                    accessor.ReadArray(0, page.Data, 0, Page.PageSize);
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    // Page doesn't exist yet, leave it as zeros
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Access to the memory-mapped file is not allowed, leave as zeros
+                }
+                catch (IOException)
+                {
+                    // I/O error occurred, leave as zeros
+                }
+            }
+            else
+            {
+                long position = pageId * Page.PageSize;
+                if (position < _fileStream.Length)
+                {
+                    _fileStream.Seek(position, SeekOrigin.Begin);
+                    int totalRead = 0;
+                    while (totalRead < Page.PageSize)
+                    {
+                        int read = _fileStream.Read(page.Data, totalRead, Page.PageSize - totalRead);
+                        if (read == 0)
+                            break;
+                        totalRead += read;
+                    }
+                }
+                // If position >= file length, page doesn't exist yet, leave it as zeros
+            }
+        }
+        
+        return extent;
+    }
+    
+    /// <summary>
+    /// Writes an entire extent (8 pages) to the database file
+    /// </summary>
+    public void WriteExtent(Extent extent)
     {
         _lock.EnterWriteLock();
         try
         {
-            var dirtyPages = _cache.GetDirtyPages().ToList();
-            foreach (var page in dirtyPages)
+            WriteExtentInternal(extent);
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
+    }
+    
+    /// <summary>
+    /// Internal method to write an extent without acquiring lock
+    /// </summary>
+    private void WriteExtentInternal(Extent extent)
+    {
+        for (int i = 0; i < Extent.PagesPerExtent; i++)
+        {
+            var page = extent.Pages[i];
+            if (page.IsDirty)
             {
                 if (_useMemoryMappedFile && _memoryMappedFile != null)
                 {
@@ -199,6 +309,47 @@ public class StorageEngine : IDisposable
                 }
                 
                 page.IsDirty = false;
+            }
+        }
+    }
+    
+    public void Flush()
+    {
+        _lock.EnterWriteLock();
+        try
+        {
+            if (_useExtentCache)
+            {
+                // Use extent-based flushing for better performance
+                var dirtyExtents = _extentCache.GetDirtyExtents().ToList();
+                foreach (var extent in dirtyExtents)
+                {
+                    WriteExtentInternal(extent);
+                }
+            }
+            else
+            {
+                // Fallback to page-based flushing
+                var dirtyPages = _cache.GetDirtyPages().ToList();
+                foreach (var page in dirtyPages)
+                {
+                    if (_useMemoryMappedFile && _memoryMappedFile != null)
+                    {
+                        using var accessor = _memoryMappedFile.CreateViewAccessor(
+                            page.PageId * Page.PageSize,
+                            Page.PageSize,
+                            MemoryMappedFileAccess.Write);
+                            
+                        accessor.WriteArray(0, page.Data, 0, Page.PageSize);
+                    }
+                    else
+                    {
+                        _fileStream.Seek(page.PageId * Page.PageSize, SeekOrigin.Begin);
+                        _fileStream.Write(page.Data, 0, Page.PageSize);
+                    }
+                    
+                    page.IsDirty = false;
+                }
             }
             
             _fileStream.Flush(true);
