@@ -148,13 +148,13 @@ for (int i = 100; i < 110; i++)
     }));
 }
 
-Task.WaitAll(tasks.ToArray());
+Task.WaitAll([.. tasks]);
 var finalCount = db.Query("Users").ToList().Count;
-Console.WriteLine($"   ✓ {finalCount} total users after concurrent inserts\n");
+Console.WriteLine($"{finalCount} total users after concurrent inserts\n");
 
 Console.WriteLine("8. Flushing to disk...");
 db.Flush();
-Console.WriteLine($"   ✓ Data persisted to: {dbPath}\n");
+Console.WriteLine($"Data persisted to: {dbPath}\n");
 
 Console.WriteLine("=== Demo completed successfully! ===");
 Console.WriteLine($"\nDatabase file size: {new FileInfo(dbPath).Length} bytes");

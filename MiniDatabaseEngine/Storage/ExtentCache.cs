@@ -6,21 +6,15 @@ namespace MiniDatabaseEngine.Storage;
 /// LRU cache for database extents (groups of 8 pages)
 /// Provides better caching by loading and managing pages in extent units
 /// </summary>
-public class ExtentCache
+public class ExtentCache(int capacity)
 {
-    private readonly int _capacity;
-    private readonly ConcurrentDictionary<int, ExtentCacheNode> _cache;
+    private readonly int _capacity = capacity;
+    private readonly ConcurrentDictionary<int, ExtentCacheNode> _cache = new();
     private readonly Lock _lockObject = new();
     
     private ExtentCacheNode? _head;
     private ExtentCacheNode? _tail;
-    
-    public ExtentCache(int capacity)
-    {
-        _capacity = capacity;
-        _cache = new ConcurrentDictionary<int, ExtentCacheNode>();
-    }
-    
+
     /// <summary>
     /// Gets an extent by extent ID
     /// </summary>
@@ -156,13 +150,11 @@ public class ExtentCache
         node.Next = _head;
         node.Previous = null;
         
-        if (_head != null)
-            _head.Previous = node;
+        _head?.Previous = node;
             
         _head = node;
         
-        if (_tail == null)
-            _tail = node;
+        _tail ??= node;
     }
     
     private void MoveToHead(ExtentCacheNode node)
@@ -199,10 +191,7 @@ public class ExtentCache
         public Extent Extent { get; set; }
         public ExtentCacheNode? Next { get; set; }
         public ExtentCacheNode? Previous { get; set; }
-        
-        public ExtentCacheNode(Extent extent)
-        {
-            Extent = extent;
-        }
+
+        public ExtentCacheNode(Extent extent) => Extent = extent;
     }
 }
