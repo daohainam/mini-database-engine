@@ -24,7 +24,7 @@ public class StorageEngine : IDisposable
     {
         _filePath = filePath;
         _cache = new PageCache(cacheSize);
-        _extentCache = new ExtentCache(cacheSize / Extent.PagesPerExtent); // Cache capacity in extents
+        _extentCache = new ExtentCache(Math.Max(1, cacheSize / Extent.PagesPerExtent)); // Ensure at least 1 extent
         _useMemoryMappedFile = useMemoryMappedFile;
         _useExtentCache = useExtentCache;
         _lock = new ReaderWriterLockSlim();
@@ -235,6 +235,14 @@ public class StorageEngine : IDisposable
                 catch (ArgumentOutOfRangeException)
                 {
                     // Page doesn't exist yet, leave it as zeros
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Access to the memory-mapped file is not allowed, leave as zeros
+                }
+                catch (IOException)
+                {
+                    // I/O error occurred, leave as zeros
                 }
             }
             else
