@@ -14,7 +14,7 @@ public class ConcurrencyTests : IDisposable
     }
     
     [Fact]
-    public void Concurrent_Inserts_Are_Thread_Safe()
+    public async Task Concurrent_Inserts_Are_Thread_Safe()
     {
         var columns = new List<ColumnDefinition>
         {
@@ -37,14 +37,14 @@ public class ConcurrencyTests : IDisposable
             }));
         }
         
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
         
         var results = table.SelectAll().ToList();
         Assert.Equal(10, results.Count);
     }
     
     [Fact]
-    public void Concurrent_Reads_And_Writes_Are_Thread_Safe()
+    public async Task Concurrent_Reads_And_Writes_Are_Thread_Safe()
     {
         var columns = new List<ColumnDefinition>
         {
@@ -95,7 +95,7 @@ public class ConcurrencyTests : IDisposable
             }));
         }
         
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
         
         var finalRow = table.SelectByKey(1);
         Assert.NotNull(finalRow);
