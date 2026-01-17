@@ -19,6 +19,8 @@ jobs:
   # Build and test the project
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code
@@ -53,6 +55,8 @@ jobs:
     needs: build-and-test
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
     
     steps:
     - name: Download NuGet package artifact
