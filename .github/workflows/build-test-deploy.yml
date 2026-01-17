@@ -44,7 +44,7 @@ jobs:
       run: dotnet pack --configuration ${{ env.CONFIGURATION }} --no-build --output ./artifacts
       
     - name: Upload NuGet package artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v4.5.0
       with:
         name: nuget-package
         path: ./artifacts/*.nupkg
@@ -60,7 +60,7 @@ jobs:
     
     steps:
     - name: Download NuGet package artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v4.1.3
       with:
         name: nuget-package
         path: ./artifacts
