@@ -295,6 +295,48 @@ The demo showcases:
 dotnet build
 ```
 
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and deployment:
+
+### Automated Workflow
+
+The workflow automatically:
+- **Builds** the project in Release configuration
+- **Runs all tests** to ensure code quality
+- **Creates NuGet package** as an artifact
+- **Deploys to NuGet.org** when a version tag is pushed
+
+### Triggering a Release
+
+To publish a new version to NuGet.org:
+
+1. Update the version in `MiniDatabaseEngine/MiniDatabaseEngine.csproj`:
+   ```xml
+   <Version>0.2.0</Version>
+   ```
+
+2. Commit the version change:
+   ```bash
+   git add MiniDatabaseEngine/MiniDatabaseEngine.csproj
+   git commit -m "Bump version to 0.2.0"
+   ```
+
+3. Create and push a version tag:
+   ```bash
+   git tag v0.2.0
+   git push origin v0.2.0
+   ```
+
+The workflow will automatically build, test, and deploy the package to NuGet.org.
+
+### Setup Requirements
+
+To enable deployment, add your NuGet API key as a repository secret:
+1. Go to repository Settings → Secrets and variables → Actions
+2. Create a new secret named `NUGET_API_KEY`
+3. Paste your NuGet.org API key as the value
+
 ## Requirements
 
 - .NET 10.0 or later
