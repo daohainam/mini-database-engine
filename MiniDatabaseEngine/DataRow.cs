@@ -53,6 +53,12 @@ public class DataRow
         var value = this[columnName];
         if (value == null)
             return default;
-        return (T)value;
+        
+        // Validate type compatibility before casting
+        if (value is T typedValue)
+            return typedValue;
+        
+        throw new InvalidCastException(
+            $"Cannot cast value of type '{value.GetType().Name}' to '{typeof(T).Name}' for column '{columnName}'");
     }
 }

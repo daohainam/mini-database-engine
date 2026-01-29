@@ -7,6 +7,24 @@ namespace MiniDatabaseEngine;
 
 /// <summary>
 /// Main database engine class
+/// 
+/// Thread Safety:
+/// This class is designed for concurrent access. All public methods are thread-safe.
+/// Uses ConcurrentDictionary for table storage and ReaderWriterLockSlim for schema operations.
+/// 
+/// Transaction Isolation:
+/// Provides ACID transaction support with Write-Ahead Logging (WAL).
+/// Isolation is achieved through locking mechanisms:
+/// - Read operations: Multiple threads can read concurrently
+/// - Write operations: Exclusive locks ensure atomicity
+/// - Transactions: Each transaction maintains isolation via locks
+/// 
+/// Lock Ordering (to prevent deadlocks):
+/// 1. Database._lock (for schema operations)
+/// 2. Table._lock (for data operations)
+/// 3. BPlusTree._lockObject (for index operations)
+/// 4. StorageEngine._lock (for storage operations)
+/// Always acquire locks in this order when nested locking is required.
 /// </summary>
 public class Database : IDisposable
 {

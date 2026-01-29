@@ -197,9 +197,12 @@ public class TransactionManager : IDisposable
             {
                 transaction.Rollback();
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore errors
+                // Suppressing exception during disposal to prevent throwing from Dispose()
+                // In production, this should be logged for monitoring and debugging.
+                // Exception type: {ex.GetType().Name}, Message: {ex.Message}
+                _ = ex; // Acknowledge we're intentionally suppressing this
             }
         }
         _activeTransactions.Clear();

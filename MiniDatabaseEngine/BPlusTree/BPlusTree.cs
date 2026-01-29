@@ -64,6 +64,10 @@ public class BPlusTree
     
     /// <summary>
     /// Delete a key-value pair from the B+ Tree
+    /// NOTE: This is a simplified implementation that does not perform node rebalancing
+    /// or merging after deletion. This may lead to suboptimal tree structure over time
+    /// with many deletions, potentially affecting performance. For production use,
+    /// consider implementing proper node merging and redistribution.
     /// </summary>
     public bool Delete(object key)
     {
@@ -246,7 +250,13 @@ public class BPlusTree
             return;
         }
         
-        var parent = (BPlusTreeInternalNode)left.Parent!;
+        // Parent should never be null for non-root nodes
+        if (left.Parent == null)
+        {
+            throw new InvalidOperationException("Parent node is null for non-root node during split operation");
+        }
+        
+        var parent = (BPlusTreeInternalNode)left.Parent;
         int index = FindKeyIndex(parent.Keys, key);
         
         parent.Keys.Insert(index, key);

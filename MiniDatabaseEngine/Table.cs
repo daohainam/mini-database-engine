@@ -7,6 +7,19 @@ namespace MiniDatabaseEngine;
 
 /// <summary>
 /// Represents a table in the database with B+ Tree indexing
+/// 
+/// Thread Safety:
+/// All data modification operations (Insert, Update, Delete) are protected by
+/// ReaderWriterLockSlim for thread safety. Multiple threads can safely perform:
+/// - Concurrent reads (SelectByKey, SelectAll)
+/// - Concurrent writes (each operation is atomic)
+/// - Mixed read/write operations
+/// 
+/// Lock Ordering (to prevent deadlocks):
+/// 1. Table._lock (this class)
+/// 2. BPlusTree._lockObject
+/// 3. StorageEngine._lock
+/// Always acquire locks in this order when nested locking is required.
 /// </summary>
 public class Table
 {
