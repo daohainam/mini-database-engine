@@ -15,11 +15,13 @@ namespace MiniDatabaseEngine;
 /// - Concurrent writes (each operation is atomic)
 /// - Mixed read/write operations
 /// 
-/// Lock Ordering (to prevent deadlocks):
-/// 1. Table._lock (this class)
-/// 2. BPlusTree._lockObject
-/// 3. StorageEngine._lock
-/// Always acquire locks in this order when nested locking is required.
+/// Lock Ordering (to prevent deadlocks when nested locking occurs):
+/// When multiple locks need to be acquired, always acquire them in this order:
+/// 1. Database._lock (schema-level operations)
+/// 2. Table._lock (this class - table-level operations)
+/// 3. BPlusTree._lockObject (index operations)
+/// 4. StorageEngine._lock (storage operations)
+/// 5. PageCache/ExtentCache locks (cache operations)
 /// </summary>
 public class Table
 {

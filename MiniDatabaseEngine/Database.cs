@@ -19,12 +19,13 @@ namespace MiniDatabaseEngine;
 /// - Write operations: Exclusive locks ensure atomicity
 /// - Transactions: Each transaction maintains isolation via locks
 /// 
-/// Lock Ordering (to prevent deadlocks):
-/// 1. Database._lock (for schema operations)
-/// 2. Table._lock (for data operations)
-/// 3. BPlusTree._lockObject (for index operations)
-/// 4. StorageEngine._lock (for storage operations)
-/// Always acquire locks in this order when nested locking is required.
+/// Lock Ordering (to prevent deadlocks when nested locking occurs):
+/// When multiple locks need to be acquired, always acquire them in this order:
+/// 1. Database._lock (this class - schema-level operations)
+/// 2. Table._lock (table-level operations)
+/// 3. BPlusTree._lockObject (index operations)
+/// 4. StorageEngine._lock (storage operations)
+/// 5. PageCache/ExtentCache locks (cache operations)
 /// </summary>
 public class Database : IDisposable
 {

@@ -10,11 +10,14 @@ namespace MiniDatabaseEngine.Storage;
 /// This class uses ReaderWriterLockSlim to ensure thread-safe operations.
 /// Multiple threads can read concurrently, but write operations are exclusive.
 /// 
-/// Lock Ordering (to prevent deadlocks):
-/// 1. StorageEngine._lock (this class)
-/// 2. PageCache._lockObject
-/// 3. ExtentCache._lockObject
-/// Always acquire locks in this order when nested locking is required.
+/// Lock Ordering (to prevent deadlocks when nested locking occurs):
+/// When multiple locks need to be acquired, always acquire them in this order:
+/// 1. Database._lock (schema-level operations)
+/// 2. Table._lock (table-level operations)
+/// 3. BPlusTree._lockObject (index operations)
+/// 4. StorageEngine._lock (this class - storage operations)
+/// 5. PageCache._lockObject (page cache operations)
+/// 6. ExtentCache._lockObject (extent cache operations)
 /// </summary>
 public class StorageEngine : IDisposable
 {

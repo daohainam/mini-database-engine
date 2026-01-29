@@ -216,12 +216,10 @@ public class Transaction : IDisposable
             {
                 Rollback();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Suppressing exception during disposal to prevent throwing from Dispose()
                 // which could mask the original exception. In production, this should be logged.
-                // Exception type: {ex.GetType().Name}, Message: {ex.Message}
-                _ = ex; // Acknowledge we're intentionally suppressing this
             }
         }
         _lock?.Dispose();
