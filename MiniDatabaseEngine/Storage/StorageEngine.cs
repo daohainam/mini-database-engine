@@ -5,6 +5,18 @@ namespace MiniDatabaseEngine.Storage;
 
 /// <summary>
 /// Manages database file storage with optional memory-mapped file support
+/// 
+/// Thread Safety:
+/// This class uses ReaderWriterLockSlim to ensure thread-safe operations.
+/// Multiple threads can read concurrently, but write operations are exclusive.
+/// 
+/// Lock Ordering (to prevent deadlocks when nested locking occurs):
+/// When multiple locks need to be acquired, always acquire them in this order:
+/// 1. Database._lock (schema-level operations)
+/// 2. Table._lock (table-level operations)
+/// 3. BPlusTree._lockObject (index operations)
+/// 4. StorageEngine._lock (this class - storage operations)
+/// 5. PageCache/ExtentCache locks (cache operations)
 /// </summary>
 public class StorageEngine : IDisposable
 {

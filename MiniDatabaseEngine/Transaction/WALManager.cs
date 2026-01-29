@@ -5,6 +5,9 @@ namespace MiniDatabaseEngine.Transaction;
 /// </summary>
 public class WALManager : IDisposable
 {
+    // Maximum size per WAL entry to prevent excessive memory allocation (1MB)
+    private const int MaxWALEntrySize = 1024 * 1024;
+    
     private readonly string _walFilePath;
     private readonly FileStream _walStream;
     private readonly ReaderWriterLockSlim _lock;
@@ -87,7 +90,7 @@ public class WALManager : IDisposable
                 int length = reader.ReadInt32();
                 
                 // Validate length to prevent excessive memory allocation
-                if (length <= 0 || length > 1024 * 1024) // Max 1MB per entry
+                if (length <= 0 || length > MaxWALEntrySize)
                 {
                     // Corrupted WAL file - stop reading
                     break;
