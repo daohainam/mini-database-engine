@@ -16,8 +16,7 @@ namespace MiniDatabaseEngine.Storage;
 /// 2. Table._lock (table-level operations)
 /// 3. BPlusTree._lockObject (index operations)
 /// 4. StorageEngine._lock (this class - storage operations)
-/// 5. PageCache._lockObject (page cache operations)
-/// 6. ExtentCache._lockObject (extent cache operations)
+/// 5. PageCache/ExtentCache locks (cache operations)
 /// </summary>
 public class StorageEngine : IDisposable
 {
