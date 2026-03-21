@@ -97,7 +97,7 @@ public class StorageEngine : IDisposable
     }
     
     /// <summary>
-    /// Internal method to read a page without acquiring the lock (caller must hold lock)
+    /// Internal method to read a page without acquiring the lock (caller must hold a read or write lock)
     /// </summary>
     private Page ReadPageInternal(int pageId)
     {
@@ -169,7 +169,7 @@ public class StorageEngine : IDisposable
     }
     
     /// <summary>
-    /// Internal method to write a page without acquiring the lock (caller must hold lock)
+    /// Internal method to write a page without acquiring the lock (caller must hold the write lock)
     /// </summary>
     private void WritePageInternal(Page page)
     {
