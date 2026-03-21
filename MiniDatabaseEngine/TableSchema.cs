@@ -5,9 +5,9 @@ namespace MiniDatabaseEngine;
 /// </summary>
 public class TableSchema
 {
-    public string TableName { get; set; }
-    public List<ColumnDefinition> Columns { get; set; }
-    public string PrimaryKeyColumn { get; set; }
+    public string TableName { get; }
+    public List<ColumnDefinition> Columns { get; }
+    public string PrimaryKeyColumn { get; }
     
     public TableSchema(string tableName, List<ColumnDefinition> columns, string primaryKeyColumn)
     {

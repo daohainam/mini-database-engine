@@ -70,7 +70,7 @@ public class TableQueryProvider : IQueryProvider
         }
         catch (System.Reflection.TargetInvocationException tie)
         {
-            throw tie.InnerException!;
+            throw tie.InnerException ?? tie;
         }
     }
     

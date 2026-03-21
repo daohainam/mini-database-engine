@@ -184,10 +184,12 @@ public class Table
         _lock.EnterReadLock();
         try
         {
+            var results = new List<DataRow>();
             foreach (var kvp in _index.GetAll())
             {
-                yield return DeserializeRow((byte[])kvp.Value!);
+                results.Add(DeserializeRow((byte[])kvp.Value!));
             }
+            return results;
         }
         finally
         {

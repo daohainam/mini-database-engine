@@ -247,5 +247,6 @@ public class Database : IDisposable
         _walManager?.Dispose();
         _lock?.Dispose();
         _storage?.Dispose();
+        GC.SuppressFinalize(this);
     }
 }
