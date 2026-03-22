@@ -96,17 +96,20 @@ public class BPlusTree
     {
         lock (_lockObject)
         {
+            var results = new List<KeyValuePair<object, object?>>();
             var leaf = GetFirstLeaf();
             
             while (leaf != null)
             {
                 for (int i = 0; i < leaf.Keys.Count; i++)
                 {
-                    yield return new KeyValuePair<object, object?>(leaf.Keys[i], leaf.Values[i]);
+                    results.Add(new KeyValuePair<object, object?>(leaf.Keys[i], leaf.Values[i]));
                 }
                 
                 leaf = leaf.Next;
             }
+            
+            return results;
         }
     }
     
@@ -117,6 +120,7 @@ public class BPlusTree
     {
         lock (_lockObject)
         {
+            var results = new List<KeyValuePair<object, object?>>();
             var leaf = minKey != null ? FindLeafNode(minKey) : GetFirstLeaf();
             
             while (leaf != null)
@@ -129,13 +133,15 @@ public class BPlusTree
                         continue;
                         
                     if (maxKey != null && _comparer.Compare(key, maxKey) > 0)
-                        yield break;
+                        return results;
                         
-                    yield return new KeyValuePair<object, object?>(key, leaf.Values[i]);
+                    results.Add(new KeyValuePair<object, object?>(key, leaf.Values[i]));
                 }
                 
                 leaf = leaf.Next;
             }
+            
+            return results;
         }
     }
     

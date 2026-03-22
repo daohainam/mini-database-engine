@@ -5,14 +5,15 @@ namespace MiniDatabaseEngine;
 /// </summary>
 public class TableSchema
 {
-    public string TableName { get; set; }
-    public List<ColumnDefinition> Columns { get; set; }
-    public string PrimaryKeyColumn { get; set; }
+    public string TableName { get; }
+    public IReadOnlyList<ColumnDefinition> Columns { get; }
+    public string PrimaryKeyColumn { get; }
     
     public TableSchema(string tableName, List<ColumnDefinition> columns, string primaryKeyColumn)
     {
         TableName = tableName ?? throw new ArgumentNullException(nameof(tableName));
-        Columns = columns ?? throw new ArgumentNullException(nameof(columns));
+        if (columns == null) throw new ArgumentNullException(nameof(columns));
+        Columns = columns.AsReadOnly();
         PrimaryKeyColumn = primaryKeyColumn;
         
         if (columns.Count == 0)

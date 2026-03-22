@@ -24,8 +24,18 @@ public class DataRow
     
     public object? this[int index]
     {
-        get => _values[index];
-        set => _values[index] = value;
+        get
+        {
+            if (index < 0 || index >= _values.Length)
+                throw new ArgumentOutOfRangeException(nameof(index), $"Column index {index} is out of range. Table has {_values.Length} columns.");
+            return _values[index];
+        }
+        set
+        {
+            if (index < 0 || index >= _values.Length)
+                throw new ArgumentOutOfRangeException(nameof(index), $"Column index {index} is out of range. Table has {_values.Length} columns.");
+            _values[index] = value;
+        }
     }
     
     public object? this[string columnName]
