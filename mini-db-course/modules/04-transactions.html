@@ -1,0 +1,439 @@
+<section class="module" id="module-4" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+
+    <header class="module-header animate-in">
+      <span class="module-number">04</span>
+      <h1 class="module-title">Transactions: The Unbreakable Promise</h1>
+      <p class="module-subtitle">How the database guarantees that a group of operations either all happen, or none of them do.</p>
+    </header>
+
+    <!-- ── SCREEN 1: ACID ── -->
+    <div class="screen animate-in">
+      <h2 class="screen-heading">The Four Promises Every Database Makes</h2>
+
+      <p>Imagine you are transferring $100 between bank accounts. Step one: debit Account A. Step two: credit Account B. Now imagine the server crashes after step one but before step two. The $100 has vanished. A <span class="term" data-definition="A transaction is a group of operations that are treated as a single, indivisible unit. Either all operations complete, or none of them do.">transaction</span> is the database's way of making this impossible.</p>
+      <p>Every transaction in a real database follows the <span class="term" data-definition="ACID stands for Atomicity, Consistency, Isolation, and Durability — the four guarantees a database makes about every transaction.">ACID</span> properties. These four words represent a contract between the database and every application that relies on it.</p>
+
+      <div class="pattern-cards stagger-children animate-in">
+        <div class="pattern-card animate-in">
+          <div class="pattern-icon" style="background: var(--color-accent-light)">⚛️</div>
+          <div class="pattern-title"><span class="term" data-definition="Atomicity means a transaction is all-or-nothing. If any operation in the transaction fails, every previous operation in that transaction is undone (rolled back).">Atomicity</span></div>
+          <p class="pattern-desc">All operations in a transaction succeed together, or none do. The transfer either fully completes or is fully undone — there is no in-between state.</p>
+        </div>
+        <div class="pattern-card animate-in">
+          <div class="pattern-icon" style="background: var(--color-success-light)">✅</div>
+          <div class="pattern-title"><span class="term" data-definition="Consistency means the database always satisfies its schema rules and constraints. A transaction can only take the database from one valid state to another valid state.">Consistency</span></div>
+          <p class="pattern-desc">Data always satisfies schema rules. Enforced via validation and <span class="term" data-definition="Serialization is the process of converting a typed object (like a C# class) into raw bytes for storage on disk, and back again when reading.">serialization</span>. A transaction cannot leave data in a broken state.</p>
+        </div>
+        <div class="pattern-card animate-in">
+          <div class="pattern-icon" style="background: var(--color-info-light)">🔒</div>
+          <div class="pattern-title"><span class="term" data-definition="Isolation means concurrent transactions do not interfere with each other. Each transaction sees a consistent snapshot of the data, as if it were running alone.">Isolation</span></div>
+          <p class="pattern-desc">Transactions do not interfere with each other. Implemented via a <span class="term" data-definition="A reader-writer lock allows multiple readers to run simultaneously, but only one writer at a time. Writers have exclusive access — all readers are blocked while a write is happening.">reader-writer lock</span> — multiple readers allowed, but only one writer at a time.</p>
+        </div>
+        <div class="pattern-card animate-in">
+          <div class="pattern-icon" style="background: #F0F9F4">🛡️</div>
+          <div class="pattern-title"><span class="term" data-definition="Durability means once a transaction is committed, its changes are permanent — even if the server crashes one millisecond later. This is guaranteed by flushing the WAL to disk before the commit returns.">Durability</span></div>
+          <p class="pattern-desc">Once committed, data survives crashes. Guaranteed by writing to the <span class="term" data-definition="A Write-Ahead Log (WAL) is a file where every change is recorded before it is applied. If the database crashes, the WAL is replayed to restore the correct state.">WAL</span> and flushing to disk before the commit returns.</p>
+        </div>
+      </div>
+
+      <div class="callout callout-accent animate-in">
+        <div class="callout-icon">💡</div>
+        <div class="callout-content">
+          <span class="callout-title">The Bank Transfer Test</span>
+          <p>Any time two operations must happen together or not at all, you need a transaction. Debits and credits, inventory decrements and order inserts, user creation and profile creation — these are all transaction-shaped problems.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 2: WRITE-AHEAD LOG ── -->
+    <div class="screen animate-in">
+      <h2 class="screen-heading">The Database Keeps a Diary</h2>
+
+      <p>Before doing <em>anything</em>, the database writes down what it is about to do. Think of a surgeon who writes the operation plan on a whiteboard before picking up a scalpel — if the power goes out mid-surgery, the next surgeon can read the whiteboard and know exactly what was in progress.</p>
+      <p>This diary is called the <span class="term" data-definition="A Write-Ahead Log (WAL) is a sequential file where every Insert, Update, and Delete is appended BEFORE the change is applied to the B+ tree. On crash recovery, committed transactions are replayed and uncommitted ones are undone.">Write-Ahead Log</span>. Every Insert, Update, and Delete is appended to a <code>.wal</code> file before being applied to the <span class="term" data-definition="A B+ tree is the data structure used to store and index database records. It keeps data sorted so searches, inserts, and range queries are all fast (O log n).">B+ tree</span>. On <span class="term" data-definition="A commit is the final instruction that makes a transaction permanent. Once committed, all the transaction's changes are visible to other users and will survive a crash.">commit</span>, a Commit record is appended and the file is forcibly flushed to disk — only then does the commit return.</p>
+
+      <div class="translation-block animate-in">
+        <div class="translation-code">
+          <span class="translation-label">Transaction.cs</span>
+<span class="code-line"><span class="code-keyword">public void</span> <span class="code-function">Commit</span>()</span>
+<span class="code-line">{</span>
+<span class="code-line">  _lock.<span class="code-function">EnterWriteLock</span>();</span>
+<span class="code-line">  <span class="code-keyword">try</span></span>
+<span class="code-line">  {</span>
+<span class="code-line">    <span class="code-function">EnsureActive</span>();</span>
+<span class="code-line">    _walManager.<span class="code-function">AppendEntry</span>(<span class="code-keyword">new</span> <span class="code-function">WALEntry</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">      TransactionId = _transactionId,</span>
+<span class="code-line">      OperationType = WALOperationType.Commit</span>
+<span class="code-line">    });</span>
+<span class="code-line">    _walManager.<span class="code-function">Flush</span>();</span>
+<span class="code-line">    _state = TransactionState.Committed;</span>
+<span class="code-line">  }</span>
+<span class="code-line">  <span class="code-keyword">finally</span> { _lock.<span class="code-function">ExitWriteLock</span>(); }</span>
+<span class="code-line">}</span>
+        </div>
+        <div class="translation-english">
+          <span class="translation-label">What This Does in Plain English</span>
+          <div class="translation-lines">
+            <div class="tl"><strong>EnterWriteLock()</strong> — Grab exclusive access. Nobody else can write while we commit.</div>
+            <div class="tl"><strong>EnsureActive()</strong> — Sanity check: the transaction must not already be committed or rolled back.</div>
+            <div class="tl"><strong>AppendEntry(Commit)</strong> — Write a "Commit" record to the WAL diary on disk.</div>
+            <div class="tl"><strong>Flush()</strong> — Force the OS to actually write the diary to the physical disk. This is the moment durability is achieved.</div>
+            <div class="tl"><strong>_state = Committed</strong> — Only now is the transaction officially done. The Flush must succeed first.</div>
+            <div class="tl"><strong>ExitWriteLock()</strong> — Release exclusive access so other transactions can proceed.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout callout-info animate-in">
+        <div class="callout-icon">📝</div>
+        <div class="callout-content">
+          <span class="callout-title">Why Flush() Is the Key Line</span>
+          <p>Without Flush(), the Commit record lives in the OS buffer — it might not reach disk before a crash. Flush() (or fsync) is the guarantee. It is the most expensive call in the commit path, which is why batching multiple writes into one transaction is much faster than committing each one individually.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 3: ROLLBACK ── -->
+    <div class="screen animate-in">
+      <h2 class="screen-heading">Rollback: Reversing Time</h2>
+
+      <p>When something goes wrong mid-transaction, the database needs to undo every change it already made — in <em>reverse order</em>. This is called a <span class="term" data-definition="A rollback undoes all the operations of a transaction that has not yet committed. Operations are reversed in reverse order (last-in, first-out) to cleanly restore the previous state.">rollback</span>. The last change made is the first one undone, like rewinding a tape.</p>
+      <p>The elegance is in the inversion: Insert becomes Delete, Delete becomes Insert, and Update simply swaps the old and new values. Every WAL entry stores both the new value AND the old value, making this possible.</p>
+
+      <div class="translation-block animate-in">
+        <div class="translation-code">
+          <span class="translation-label">Transaction.cs — Rollback()</span>
+<span class="code-line"><span class="code-keyword">public void</span> <span class="code-function">Rollback</span>()</span>
+<span class="code-line">{</span>
+<span class="code-line">  _lock.<span class="code-function">EnterWriteLock</span>();</span>
+<span class="code-line">  <span class="code-keyword">try</span></span>
+<span class="code-line">  {</span>
+<span class="code-line">    <span class="code-keyword">for</span> (<span class="code-keyword">int</span> i = _entries.Count - <span class="code-number">1</span>; i &gt;= <span class="code-number">0</span>; i--)</span>
+<span class="code-line">    {</span>
+<span class="code-line">      <span class="code-keyword">var</span> entry = _entries[i];</span>
+<span class="code-line">      <span class="code-keyword">var</span> undoEntry = <span class="code-function">CreateUndoEntry</span>(entry);</span>
+<span class="code-line">      _undoCallback(undoEntry);</span>
+<span class="code-line">    }</span>
+<span class="code-line">    _walManager.<span class="code-function">AppendEntry</span>(<span class="code-keyword">new</span> <span class="code-function">WALEntry</span> {</span>
+<span class="code-line">      TransactionId = _transactionId,</span>
+<span class="code-line">      OperationType = WALOperationType.Rollback</span>
+<span class="code-line">    });</span>
+<span class="code-line">    _walManager.<span class="code-function">Flush</span>();</span>
+<span class="code-line">    _state = TransactionState.RolledBack;</span>
+<span class="code-line">  }</span>
+<span class="code-line">  <span class="code-keyword">finally</span> { _lock.<span class="code-function">ExitWriteLock</span>(); }</span>
+<span class="code-line">}</span>
+        </div>
+        <div class="translation-english">
+          <span class="translation-label">What This Does in Plain English</span>
+          <div class="translation-lines">
+            <div class="tl"><strong>Loop from last to first</strong> — Undo operations in reverse order. If we inserted A, then B, we undo B first, then A.</div>
+            <div class="tl"><strong>CreateUndoEntry(entry)</strong> — Produce the mirror-image operation: Insert → Delete, Update → Update with swapped values, Delete → Insert.</div>
+            <div class="tl"><strong>_undoCallback(undoEntry)</strong> — Actually apply the undo to the B+ tree, restoring the old data.</div>
+            <div class="tl"><strong>AppendEntry(Rollback)</strong> — Write a Rollback record to the WAL so recovery knows this transaction was intentionally undone.</div>
+            <div class="tl"><strong>Flush() + RolledBack</strong> — Same pattern as commit: force to disk, then update state.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="translation-block animate-in">
+        <div class="translation-code">
+          <span class="translation-label">Transaction.cs — CreateUndoEntry()</span>
+<span class="code-line"><span class="code-keyword">private</span> WALEntry <span class="code-function">CreateUndoEntry</span>(WALEntry entry)</span>
+<span class="code-line">{</span>
+<span class="code-line">  <span class="code-keyword">switch</span> (entry.OperationType)</span>
+<span class="code-line">  {</span>
+<span class="code-line">    <span class="code-keyword">case</span> WALOperationType.Insert:</span>
+<span class="code-line">      <span class="code-keyword">return new</span> <span class="code-function">WALEntry</span> {</span>
+<span class="code-line">        OperationType = WALOperationType.Delete,</span>
+<span class="code-line">        OldValue = entry.NewValue };</span>
+<span class="code-line">    <span class="code-keyword">case</span> WALOperationType.Update:</span>
+<span class="code-line">      <span class="code-keyword">return new</span> <span class="code-function">WALEntry</span> {</span>
+<span class="code-line">        OperationType = WALOperationType.Update,</span>
+<span class="code-line">        NewValue = entry.OldValue };</span>
+<span class="code-line">    <span class="code-keyword">case</span> WALOperationType.Delete:</span>
+<span class="code-line">      <span class="code-keyword">return new</span> <span class="code-function">WALEntry</span> {</span>
+<span class="code-line">        OperationType = WALOperationType.Insert,</span>
+<span class="code-line">        NewValue = entry.OldValue };</span>
+<span class="code-line">  }</span>
+<span class="code-line">  <span class="code-keyword">throw new</span> <span class="code-function">InvalidOperationException</span>(<span class="code-string">"Unknown op type"</span>);</span>
+<span class="code-line">}</span>
+        </div>
+        <div class="translation-english">
+          <span class="translation-label">The Elegant Inversion</span>
+          <div class="translation-lines">
+            <div class="tl"><strong>Insert → Delete</strong> — We added a row, so undo it by deleting that same row (using its NewValue as the key).</div>
+            <div class="tl"><strong>Update → Update reversed</strong> — We changed a value, so undo it by changing it back (NewValue becomes OldValue).</div>
+            <div class="tl"><strong>Delete → Insert</strong> — We removed a row, so undo it by re-inserting the original row (stored in OldValue).</div>
+            <div class="tl">This works because WAL entries store BOTH old and new values — the old value is the safety net for undo.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 4: CRASH RECOVERY FLOW ── -->
+    <div class="screen animate-in">
+      <h2 class="screen-heading">Crash Recovery: Reading the Diary</h2>
+
+      <p>When the database restarts after a crash, it reads the WAL from the beginning. For every transaction it finds, it falls into one of three categories. The recovery engine handles each one differently — this is how the database heals itself automatically.</p>
+
+      <div class="flow-animation animate-in" id="flow-recovery"
+        data-steps='[
+          {"highlight":"flow-recovery-wal","label":"Recovery starts. The WAL file is opened and read from the beginning. Every transaction record is catalogued."},
+          {"highlight":"flow-recovery-engine","label":"Case 1: COMMITTED transaction found. This transaction has a Commit record — all its operations are safe to replay.","packet":true,"from":"recovery-wal","to":"recovery-engine"},
+          {"highlight":"flow-recovery-tree","label":"Replay: Every operation from the committed transaction is re-applied to the B+ tree in order.","packet":true,"from":"recovery-engine","to":"recovery-tree"},
+          {"highlight":"flow-recovery-result","label":"Result: The committed data is restored. The database is back to the state it was in at the moment of commit.","packet":true,"from":"recovery-tree","to":"recovery-result"},
+          {"highlight":"flow-recovery-engine","label":"Case 2: ROLLED-BACK transaction found. This transaction has a Rollback record — it was already undone intentionally. Skip it entirely."},
+          {"highlight":"flow-recovery-result","label":"Result: Nothing to do. The rollback was already recorded, so skipping it leaves the database in the correct state."},
+          {"highlight":"flow-recovery-engine","label":"Case 3: UNCOMMITTED transaction found. No Commit or Rollback record — the crash happened mid-transaction.","packet":true,"from":"recovery-wal","to":"recovery-engine"},
+          {"highlight":"flow-recovery-tree","label":"Undo: Every operation from the incomplete transaction is reversed in REVERSE order using CreateUndoEntry logic.","packet":true,"from":"recovery-engine","to":"recovery-tree"},
+          {"highlight":"flow-recovery-result","label":"Result: The partial work is erased. The database behaves as if that transaction never started. ACID preserved.","packet":true,"from":"recovery-tree","to":"recovery-result"}
+        ]'>
+        <div class="flow-actors">
+          <div class="flow-actor" id="flow-recovery-wal">
+            <div class="flow-actor-icon">📝</div>
+            <span>WAL File</span>
+          </div>
+          <div class="flow-actor" id="flow-recovery-engine">
+            <div class="flow-actor-icon">🔄</div>
+            <span>Recovery Engine</span>
+          </div>
+          <div class="flow-actor" id="flow-recovery-tree">
+            <div class="flow-actor-icon">🌳</div>
+            <span>B+ Tree</span>
+          </div>
+          <div class="flow-actor" id="flow-recovery-result">
+            <div class="flow-actor-icon">✅</div>
+            <span>Result</span>
+          </div>
+        </div>
+        <div class="flow-packet"></div>
+        <div class="flow-step-label">Click "Next Step" to begin</div>
+        <div class="flow-controls">
+          <button class="btn btn-primary flow-next-btn">Next Step</button>
+          <button class="btn flow-reset-btn">Reset</button>
+          <span class="flow-progress">Step 0 / 9</span>
+        </div>
+      </div>
+
+      <div class="callout callout-info animate-in">
+        <div class="callout-icon">🔄</div>
+        <div class="callout-content">
+          <span class="callout-title">Three Outcomes, One Algorithm</span>
+          <p>Committed = replay forward. Rolled back = skip. Uncommitted (crash) = undo in reverse. The WAL contains enough information to handle all three cases perfectly, which is why it must record both old and new values for every operation.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 5: GROUP CHAT ── -->
+    <div class="screen animate-in">
+      <h2 class="screen-heading">A Transaction Commits: Step by Step</h2>
+
+      <p>Behind the scenes, committing a transaction is a choreographed conversation between three components. The Transaction holds the list of operations, the WAL Manager owns the diary on disk, and the Table owns the data. Watch how they coordinate.</p>
+
+      <div class="chat-window animate-in" id="chat-module4">
+        <div class="chat-messages">
+          <div class="chat-message" data-sender="txn" style="display:none">
+            <div class="chat-avatar" style="background: var(--color-actor-1)">🔐</div>
+            <div class="chat-bubble">
+              <span class="chat-sender" style="color: var(--color-actor-1)">Transaction</span>
+              <p>I am ready to commit. I have 3 operations to save.</p>
+            </div>
+          </div>
+          <div class="chat-message" data-sender="wal" style="display:none">
+            <div class="chat-avatar" style="background: var(--color-actor-2)">📝</div>
+            <div class="chat-bubble">
+              <span class="chat-sender" style="color: var(--color-actor-2)">WAL Manager</span>
+              <p>Writing Commit record to disk... flushing...</p>
+            </div>
+          </div>
+          <div class="chat-message" data-sender="wal" style="display:none">
+            <div class="chat-avatar" style="background: var(--color-actor-2)">📝</div>
+            <div class="chat-bubble">
+              <span class="chat-sender" style="color: var(--color-actor-2)">WAL Manager</span>
+              <p>Done. Operations are now permanent on disk. Flush confirmed.</p>
+            </div>
+          </div>
+          <div class="chat-message" data-sender="txn" style="display:none">
+            <div class="chat-avatar" style="background: var(--color-actor-1)">🔐</div>
+            <div class="chat-bubble">
+              <span class="chat-sender" style="color: var(--color-actor-1)">Transaction</span>
+              <p>State updated to Committed. Releasing writer lock.</p>
+            </div>
+          </div>
+          <div class="chat-message" data-sender="table" style="display:none">
+            <div class="chat-avatar" style="background: var(--color-actor-3)">📋</div>
+            <div class="chat-bubble">
+              <span class="chat-sender" style="color: var(--color-actor-3)">Table</span>
+              <p>All 3 operations are now visible to other queries. Lock released.</p>
+            </div>
+          </div>
+        </div>
+        <div class="chat-typing" style="display:none">
+          <div class="chat-avatar" id="chat-module4-typing-avatar" style="background: var(--color-actor-1)">🔐</div>
+          <div class="chat-typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+          </div>
+        </div>
+        <div class="chat-controls">
+          <button class="btn btn-primary chat-next-btn">Next Message</button>
+          <button class="btn chat-all-btn">Play All</button>
+          <button class="btn chat-reset-btn">Reset</button>
+          <span class="chat-progress">0 / 5 messages</span>
+        </div>
+      </div>
+
+      <!-- Bug Challenge -->
+      <div class="bug-challenge animate-in">
+        <h3>Bug Challenge: Where Does the Data Disappear?</h3>
+        <p style="font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-4)">The code below inserts an order, but users report that sometimes the order is not saved. Click the line where the data is being silently lost.</p>
+        <div class="bug-code">
+          <div class="bug-line" onclick="checkBugLine(this, false)" data-hint="The connection setup looks fine.">
+            <span class="line-num">1</span>
+            <code><span class="code-keyword">var</span> txn = db.<span class="code-function">BeginTransaction</span>();</code>
+          </div>
+          <div class="bug-line" onclick="checkBugLine(this, false)" data-hint="Inserting the order is correct.">
+            <span class="line-num">2</span>
+            <code>txn.<span class="code-function">Insert</span>(<span class="code-string">"orders"</span>, newOrder);</code>
+          </div>
+          <div class="bug-line" onclick="checkBugLine(this, false)" data-hint="This is correct — inventory should be updated inside the same transaction.">
+            <span class="line-num">3</span>
+            <code>txn.<span class="code-function">Update</span>(<span class="code-string">"inventory"</span>, item, newQty);</code>
+          </div>
+          <div class="bug-line" onclick="checkBugLine(this, false)" data-hint="The try block is fine — it is the finally block that is missing the critical call.">
+            <span class="line-num">4</span>
+            <code><span class="code-keyword">try</span> {</code>
+          </div>
+          <div class="bug-line" onclick="checkBugLine(this, false)" data-hint="Validation is not the problem here.">
+            <span class="line-num">5</span>
+            <code>  <span class="code-function">ValidateOrder</span>(newOrder);</code>
+          </div>
+          <div class="bug-line" onclick="checkBugLine(this, true)"
+            data-explanation="The txn.Commit() call is missing! Without it, the transaction is never committed. When the function returns, the transaction object is garbage-collected without being committed, so all changes are silently discarded. The WAL never gets a Commit record, and on the next restart everything is rolled back.">
+            <span class="line-num">6</span>
+            <code>  <span class="code-comment">// TODO: finish this later?</span></code>
+          </div>
+          <div class="bug-line" onclick="checkBugLine(this, false)" data-hint="The catch block handles exceptions correctly — the bug is not here.">
+            <span class="line-num">7</span>
+            <code>} <span class="code-keyword">catch</span> { txn.<span class="code-function">Rollback</span>(); <span class="code-keyword">throw</span>; }</code>
+          </div>
+        </div>
+        <div class="bug-feedback"></div>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 6: QUIZ ── -->
+    <div class="screen animate-in">
+      <h2 class="screen-heading">Test Your Understanding</h2>
+
+      <div class="quiz-container animate-in" id="quiz-module4">
+
+        <div class="quiz-question-block"
+          data-correct="a"
+          data-explanation-right="Atomicity is the all-or-nothing guarantee. The transfer is treated as a single unit — both the debit and the credit happen, or neither does. The transaction is rolled back if anything fails."
+          data-explanation-wrong="Think about which ACID property deals with a group of operations that must all succeed together, or all fail together.">
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario</span>
+              <p>You are building a payment system. A transfer debits one account and credits another. Something goes wrong mid-transfer, after the debit but before the credit.</p>
+            </div>
+          </div>
+          <p class="quiz-question">Which ACID property saves you from losing money?</p>
+          <div class="quiz-options">
+            <button class="quiz-option" onclick="selectOption(this)" data-value="a">
+              <div class="quiz-option-radio"></div>
+              Atomicity — the transaction either completes fully or is rolled back entirely.
+            </button>
+            <button class="quiz-option" onclick="selectOption(this)" data-value="b">
+              <div class="quiz-option-radio"></div>
+              Durability — the data is flushed to disk so it survives a crash.
+            </button>
+            <button class="quiz-option" onclick="selectOption(this)" data-value="c">
+              <div class="quiz-option-radio"></div>
+              Isolation — concurrent transactions do not see each other's partial work.
+            </button>
+            <button class="quiz-option" onclick="selectOption(this)" data-value="d">
+              <div class="quiz-option-radio"></div>
+              Consistency — schema constraints prevent invalid data from being saved.
+            </button>
+          </div>
+          <div class="quiz-feedback"></div>
+        </div>
+
+        <div class="quiz-question-block"
+          data-correct="b"
+          data-explanation-right="A WAL entry with no Commit record means the crash happened mid-transaction. Recovery undoes all that transaction's operations in reverse order using CreateUndoEntry, as if the transaction never started."
+          data-explanation-wrong="The WAL tells recovery exactly what happened. What does the absence of a Commit record mean?">
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario</span>
+              <p>After a server crash, the database restarts. While reading the WAL, the recovery engine finds entries for a transaction but there is no Commit record at the end.</p>
+            </div>
+          </div>
+          <p class="quiz-question">What does the recovery engine do?</p>
+          <div class="quiz-options">
+            <button class="quiz-option" onclick="selectOption(this)" data-value="a">
+              <div class="quiz-option-radio"></div>
+              Replay all the operations — the transaction was probably about to commit.
+            </button>
+            <button class="quiz-option" onclick="selectOption(this)" data-value="b">
+              <div class="quiz-option-radio"></div>
+              Undo all the operations in reverse order — the crash happened mid-transaction.
+            </button>
+            <button class="quiz-option" onclick="selectOption(this)" data-value="c">
+              <div class="quiz-option-radio"></div>
+              Skip the transaction and log a warning — it is ambiguous.
+            </button>
+            <button class="quiz-option" onclick="selectOption(this)" data-value="d">
+              <div class="quiz-option-radio"></div>
+              Ask the application to retry the transaction from scratch.
+            </button>
+          </div>
+          <div class="quiz-feedback"></div>
+        </div>
+
+        <div class="quiz-question-block"
+          data-correct="c"
+          data-explanation-right="Isolation is enforced by the reader-writer lock. Only one writer can hold the lock at a time, so two simultaneous writes are serialized — one waits for the other to finish. This prevents corruption."
+          data-explanation-wrong="Think about which ACID property (and which mechanism) controls what happens when multiple transactions try to write simultaneously.">
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario</span>
+              <p>Two users try to update the same record at exactly the same time. Without any protection, both could read the old value, make their change, and write back — the last one wins and the first update is lost.</p>
+            </div>
+          </div>
+          <p class="quiz-question">Which mechanism prevents them from corrupting each other?</p>
+          <div class="quiz-options">
+            <button class="quiz-option" onclick="selectOption(this)" data-value="a">
+              <div class="quiz-option-radio"></div>
+              Atomicity — each transaction is all-or-nothing.
+            </button>
+            <button class="quiz-option" onclick="selectOption(this)" data-value="b">
+              <div class="quiz-option-radio"></div>
+              The WAL — it records which transaction ran first.
+            </button>
+            <button class="quiz-option" onclick="selectOption(this)" data-value="c">
+              <div class="quiz-option-radio"></div>
+              Reader-Writer Lock (Isolation) — only one writer can hold the lock at a time.
+            </button>
+            <button class="quiz-option" onclick="selectOption(this)" data-value="d">
+              <div class="quiz-option-radio"></div>
+              Serialization — the data type system prevents conflicting writes.
+            </button>
+          </div>
+          <div class="quiz-feedback"></div>
+        </div>
+
+        <div style="margin-top: var(--space-6)">
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module4')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module4')">Try Again</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>

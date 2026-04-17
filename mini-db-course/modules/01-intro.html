@@ -1,0 +1,299 @@
+<section class="module" id="module-1" style="background: var(--color-bg)">
+  <div class="module-content">
+
+    <header class="module-header animate-in">
+      <span class="module-number">01</span>
+      <h1 class="module-title">Your First Insert</h1>
+      <p class="module-subtitle">You write one line of code. Here is what happens in the next few milliseconds.</p>
+    </header>
+
+    <!-- ── SCREEN 1: What is a database engine? ───────────────── -->
+    <div class="screen">
+      <h2 class="screen-heading animate-in">What is a database engine?</h2>
+
+      <p class="animate-in">
+        Think of your application like a car. You press the accelerator and it moves — but you have no idea what is
+        happening under the hood with pistons, fuel injectors, and timing belts. A
+        <span class="term" data-definition="A database engine is the core software library that physically stores, retrieves, and manages data. Your app talks to it through a simple API, while the engine handles locking, indexing, disk I/O, and crash recovery internally.">database engine</span>
+        is exactly that machinery under the hood for your data.
+      </p>
+
+      <p class="animate-in">
+        You call two lines of code. The engine does the rest.
+      </p>
+
+      <div class="translation-block animate-in">
+        <div class="translation-code">
+          <span class="translation-label">C#</span>
+          <code>
+            <span class="code-line"><span class="code-keyword">var</span> db = <span class="code-keyword">new</span> <span class="code-function">Database</span>(<span class="code-string">"mydata.mde"</span>);</span>
+            <span class="code-line">db.<span class="code-function">Insert</span>(<span class="code-string">"Users"</span>, row);</span>
+          </code>
+        </div>
+        <div class="translation-english">
+          <span class="translation-label">What this means</span>
+          <div class="translation-lines">
+            <p class="tl"><strong>Line 1:</strong> Open (or create) a database file called <code>mydata.mde</code> on disk. Load its structure into memory.</p>
+            <p class="tl"><strong>Line 2:</strong> Store one row of data in the table called "Users". The engine will lock the table, serialize the row to bytes, insert it into the index, and optionally record it in the transaction log — all automatically.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout callout-info animate-in">
+        <span class="callout-icon">💡</span>
+        <div class="callout-content">
+          <span class="callout-title">No server needed</span>
+          <p>Unlike MySQL or PostgreSQL, this engine is a <em>library</em> — it runs inside your app process. No installation, no port 3306, no config files. Just a .NET package and a file path.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 2: The journey of a row ─────────────────────── -->
+    <div class="screen">
+      <h2 class="screen-heading animate-in">The five-hop journey of a row</h2>
+
+      <p class="animate-in">
+        From the moment you call <code>db.Insert()</code>, your data visits five different components before it
+        is safely stored. Each component has exactly one job. Click <strong>Next Step</strong> to walk through
+        each hop.
+      </p>
+
+      <div class="flow-animation animate-in"
+           data-steps='[
+             {"highlight":"flow-actor-1","label":"You call db.Insert() with a new row of data"},
+             {"highlight":"flow-actor-2","label":"Database API validates the table name and passes to Table","packet":true,"from":"actor-1","to":"actor-2"},
+             {"highlight":"flow-actor-3","label":"Table acquires a write lock so no other thread can interfere","packet":true,"from":"actor-2","to":"actor-3"},
+             {"highlight":"flow-actor-4","label":"Table extracts the primary key and serializes the row to bytes","packet":true,"from":"actor-3","to":"actor-4"},
+             {"highlight":"flow-actor-5","label":"B+ Tree Index inserts the key, possibly splitting nodes to stay balanced","packet":true,"from":"actor-4","to":"actor-5"},
+             {"highlight":"flow-actor-5","label":"If a transaction is active, the operation is also logged to the WAL file"},
+             {"highlight":"flow-actor-5","label":"Insert complete — the row is now findable in microseconds via the index"}
+           ]'>
+
+        <div class="flow-actors">
+          <div class="flow-actor" id="flow-actor-1">
+            <div class="flow-actor-icon">🖥</div>
+            <span>Your Code</span>
+          </div>
+          <div class="flow-actor" id="flow-actor-2">
+            <div class="flow-actor-icon">🗄</div>
+            <span>Database API</span>
+          </div>
+          <div class="flow-actor" id="flow-actor-3">
+            <div class="flow-actor-icon">📋</div>
+            <span>Table</span>
+          </div>
+          <div class="flow-actor" id="flow-actor-4">
+            <div class="flow-actor-icon">⚙</div>
+            <span>Serializer</span>
+          </div>
+          <div class="flow-actor" id="flow-actor-5">
+            <div class="flow-actor-icon">🌳</div>
+            <span>B+ Tree</span>
+          </div>
+        </div>
+
+        <div class="flow-packet"></div>
+
+        <div class="flow-step-label">Click "Next Step" to begin</div>
+
+        <div class="flow-controls">
+          <button class="quiz-check-btn flow-next-btn">Next Step</button>
+          <button class="quiz-reset-btn flow-reset-btn">Reset</button>
+          <span class="flow-progress"></span>
+        </div>
+      </div>
+
+      <div class="callout callout-accent animate-in">
+        <span class="callout-icon">🔒</span>
+        <div class="callout-content">
+          <span class="callout-title">Why does Table need a lock?</span>
+          <p>If two threads tried to insert at the same moment without a
+            <span class="term" data-definition="A lock is a synchronization mechanism that prevents two threads from modifying the same data simultaneously. A write lock means: only one writer at a time, but multiple readers are fine otherwise.">lock</span>,
+            they could corrupt the
+            <span class="term" data-definition="A B+ tree is a self-balancing sorted tree structure. All data lives in leaf nodes, and internal nodes act as a routing guide. It keeps data sorted so lookups and range queries are fast — O(log n).">B+ tree</span>.
+            The <code>ReaderWriterLockSlim</code> allows many concurrent reads but serializes all writes.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 3: Code translation ─────────────────────────── -->
+    <div class="screen">
+      <h2 class="screen-heading animate-in">Reading the actual Insert code</h2>
+
+      <p class="animate-in">
+        Here is the real <code>Insert</code> method from <code>Table.cs</code>. Every line does something important.
+        The right column translates each piece into plain English.
+      </p>
+
+      <div class="translation-block animate-in">
+        <div class="translation-code">
+          <span class="translation-label">Table.cs</span>
+          <code>
+            <span class="code-line"><span class="code-keyword">public void</span> <span class="code-function">Insert</span>(<span class="code-tag">DataRow</span> row,</span>
+            <span class="code-line">    <span class="code-tag">Transaction</span>? transaction = <span class="code-keyword">null</span>)</span>
+            <span class="code-line">{</span>
+            <span class="code-line">  _lock.<span class="code-function">EnterWriteLock</span>();</span>
+            <span class="code-line">  <span class="code-keyword">try</span></span>
+            <span class="code-line">  {</span>
+            <span class="code-line">    <span class="code-keyword">var</span> key = <span class="code-function">GetPrimaryKey</span>(row);</span>
+            <span class="code-line">    <span class="code-keyword">var</span> serialized = <span class="code-function">SerializeRow</span>(row);</span>
+            <span class="code-line">    <span class="code-keyword">if</span> (transaction != <span class="code-keyword">null</span>)</span>
+            <span class="code-line">      transaction.<span class="code-function">LogInsert</span>(</span>
+            <span class="code-line">        _schema.TableName, key, serialized);</span>
+            <span class="code-line">    _index.<span class="code-function">Insert</span>(key, serialized);</span>
+            <span class="code-line">    _nextRowId++;</span>
+            <span class="code-line">  }</span>
+            <span class="code-line">  <span class="code-keyword">finally</span> { _lock.<span class="code-function">ExitWriteLock</span>(); }</span>
+            <span class="code-line">}</span>
+          </code>
+        </div>
+        <div class="translation-english">
+          <span class="translation-label">Plain English</span>
+          <div class="translation-lines">
+            <p class="tl"><strong>EnterWriteLock()</strong> — Grab an exclusive lock. No other thread can write (or read) until we are done.</p>
+            <p class="tl"><strong>GetPrimaryKey(row)</strong> — Extract the unique identifier for this row (e.g. the "Id" column value). This becomes the key in the
+              <span class="term" data-definition="An index is a sorted data structure that lets the database find rows by key without scanning every row. Think of it like the index at the back of a book.">index</span>.
+            </p>
+            <p class="tl"><strong>SerializeRow(row)</strong> — Convert the entire row object into a raw byte array so it can be stored on disk. This is
+              <span class="term" data-definition="Serialization is the process of converting an in-memory object (like a C# class instance) into a sequence of bytes that can be saved to disk or sent over a network, then reconstructed later.">serialization</span>.
+            </p>
+            <p class="tl"><strong>transaction.LogInsert()</strong> — If we are inside a transaction, record this operation in the
+              <span class="term" data-definition="The Write-Ahead Log (WAL) is a file where every operation is recorded BEFORE it is applied to the main data. If the app crashes, the engine replays this log to recover.">WAL</span>
+              before touching the index. Safety first.</p>
+            <p class="tl"><strong>_index.Insert(key, serialized)</strong> — Actually place the key and value into the B+ tree.</p>
+            <p class="tl"><strong>finally ExitWriteLock()</strong> — Always release the lock — even if something threw an exception. The <code>finally</code> block guarantees this.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SCREEN 4: Universal pattern ────────────────────────── -->
+    <div class="screen">
+      <h2 class="screen-heading animate-in">Every database does this</h2>
+
+      <p class="animate-in">
+        This pattern — validate, lock, serialize, index, log — is not unique to this mini-engine.
+        MySQL, PostgreSQL, and SQLite all follow the same fundamental steps, just with more complexity layered on top.
+      </p>
+
+      <div class="pattern-cards animate-in stagger-children">
+        <div class="pattern-card animate-in">
+          <div class="pattern-icon" style="background: var(--color-accent-light);">🗄</div>
+          <p class="pattern-title">MySQL / InnoDB</p>
+          <p class="pattern-desc">Uses a B+ tree (called a clustered index), row-level locking, and a redo log (equivalent to WAL). Same pattern, production-grade implementation.</p>
+        </div>
+        <div class="pattern-card animate-in">
+          <div class="pattern-icon" style="background: var(--color-info-light);">🐘</div>
+          <p class="pattern-title">PostgreSQL</p>
+          <p class="pattern-desc">Uses heap files + separate B-tree indexes, MVCC for concurrency, and a WAL for durability. Slightly different structure, identical goals.</p>
+        </div>
+        <div class="pattern-card animate-in">
+          <div class="pattern-icon" style="background: var(--color-success-light);">🪶</div>
+          <p class="pattern-title">SQLite</p>
+          <p class="pattern-desc">A single-file embedded database (just like this engine!). Uses a B-tree, a WAL journal, and a serialization format. The closest cousin to our mini-engine.</p>
+        </div>
+      </div>
+
+      <div class="callout callout-info animate-in">
+        <span class="callout-icon">🌍</span>
+        <div class="callout-content">
+          <span class="callout-title">The big picture</span>
+          <p>Understanding this mini-engine means you now understand the skeleton of every relational database in existence. The algorithms — B+ trees,
+            <span class="term" data-definition="ACID stands for Atomicity, Consistency, Isolation, Durability — four properties that guarantee database transactions are processed reliably even in the face of errors and crashes.">ACID</span>
+            transactions, write-ahead logging, and
+            <span class="term" data-definition="An LRU (Least Recently Used) cache keeps the most recently accessed items in memory and evicts the oldest ones when space runs out. Databases use it to avoid re-reading the same disk pages repeatedly.">LRU</span>
+            caching — appear in every serious database engine.</p>
+        </div>
+      </div>
+
+      <!-- ── QUIZ ──────────────────────────────────────────────── -->
+      <h2 class="screen-heading animate-in" style="margin-top: var(--space-12);">Test your understanding</h2>
+
+      <div class="quiz-container animate-in" id="quiz-module1">
+
+        <div class="quiz-question-block"
+             data-correct="wal"
+             data-explanation-right="The WAL (Write-Ahead Log) records every operation to disk before it is applied. If data is missing after a crash, replaying the WAL recovers it. This is exactly what transaction.LogInsert() does."
+             data-explanation-wrong="While indexes and serialization are important, the component that specifically protects against data loss during a crash is the Write-Ahead Log.">
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario</span>
+              <p>A user reports that data they saved yesterday disappeared after the app crashed mid-operation. Based on what you just learned, which component is most relevant to investigate?</p>
+            </div>
+          </div>
+          <p class="quiz-question">Which component is responsible for crash recovery?</p>
+          <div class="quiz-options">
+            <button class="quiz-option" data-value="bplustree" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The B+ Tree index — it stores all the data
+            </button>
+            <button class="quiz-option" data-value="serializer" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The Serializer — it converts objects to bytes
+            </button>
+            <button class="quiz-option" data-value="wal" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The WAL (Write-Ahead Log) — it records operations before applying them
+            </button>
+            <button class="quiz-option" data-value="lock" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The write lock — it prevents concurrent access
+            </button>
+          </div>
+          <div class="quiz-feedback"></div>
+        </div>
+
+        <div class="quiz-question-block"
+             data-correct="bplustree"
+             data-explanation-right="The B+ tree keeps all keys sorted and links all leaf nodes in a chain. To find users aged 25-30, it jumps to the first matching key in O(log n) time, then walks forward through the leaf chain. No full table scan needed."
+             data-explanation-wrong="The lock, serializer, and WAL are not involved in speeding up queries. The B+ tree index is what makes range queries fast.">
+          <p class="quiz-question">You want to find all users aged 25-30 without scanning every row. Which component makes this possible?</p>
+          <div class="quiz-options">
+            <button class="quiz-option" data-value="lock" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The reader-writer lock — it allows multiple readers
+            </button>
+            <button class="quiz-option" data-value="bplustree" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The B+ Tree index — it keeps keys sorted and leaf nodes linked
+            </button>
+            <button class="quiz-option" data-value="wal" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The WAL — it has a log of all previous operations
+            </button>
+            <button class="quiz-option" data-value="serializer" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The Serializer — it converts row bytes back to objects
+            </button>
+          </div>
+          <div class="quiz-feedback"></div>
+        </div>
+
+        <div class="quiz-question-block"
+             data-correct="still-safe"
+             data-explanation-right="Without a transaction, the insert still works — it just has no rollback capability. The operation is applied directly to the B+ tree. If something goes wrong midway through a batch of inserts, there is no way to undo the partial work."
+             data-explanation-wrong="Calling Insert() without a transaction is perfectly valid and safe for a single operation. The difference is you lose the ability to undo it as part of a group.">
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario</span>
+              <p>You call <code>db.Insert("Orders", row)</code> without calling <code>db.BeginTransaction()</code> first. The <code>transaction</code> parameter defaults to <code>null</code>.</p>
+            </div>
+          </div>
+          <p class="quiz-question">What happens to the insert?</p>
+          <div class="quiz-options">
+            <button class="quiz-option" data-value="fails" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>It throws an exception because a transaction is required
+            </button>
+            <button class="quiz-option" data-value="still-safe" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>It succeeds, but there is no WAL log entry and no rollback capability
+            </button>
+            <button class="quiz-option" data-value="auto-transaction" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The engine automatically creates a hidden transaction
+            </button>
+            <button class="quiz-option" data-value="data-lost" onclick="selectOption(this)">
+              <span class="quiz-option-radio"></span>The data is stored but will be lost on the next restart
+            </button>
+          </div>
+          <div class="quiz-feedback"></div>
+        </div>
+
+        <button class="quiz-check-btn" onclick="checkQuiz('quiz-module1')">Check Answers</button>
+        <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module1')">Reset</button>
+      </div>
+    </div>
+
+  </div>
+</section>
