@@ -54,7 +54,14 @@ public class TableQueryProvider : IQueryProvider
     
     public IQueryable CreateQuery(Expression expression)
     {
-        Type elementType = expression.Type.GetGenericArguments()[0];
+        if (expression == null)
+            throw new ArgumentNullException(nameof(expression));
+        
+        var genericArgs = expression.Type.GetGenericArguments();
+        if (genericArgs.Length == 0)
+            throw new ArgumentException("Expression type must be a generic type with at least one type argument", nameof(expression));
+        
+        Type elementType = genericArgs[0];
         try
         {
             return (IQueryable)Activator.CreateInstance(
@@ -63,7 +70,7 @@ public class TableQueryProvider : IQueryProvider
         }
         catch (System.Reflection.TargetInvocationException tie)
         {
-            throw tie.InnerException!;
+            throw tie.InnerException ?? tie;
         }
     }
     

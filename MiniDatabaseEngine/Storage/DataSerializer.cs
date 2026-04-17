@@ -11,65 +11,74 @@ public static class DataSerializer
     {
         if (value == null)
             return new byte[] { 0 }; // Null marker
-            
-        using var ms = new MemoryStream();
-        using var writer = new BinaryWriter(ms);
         
-        writer.Write((byte)1); // Not null marker
-        
-        switch (dataType)
+        try
         {
-            case DataType.Byte:
-                writer.Write((byte)value);
-                break;
-            case DataType.SByte:
-                writer.Write((sbyte)value);
-                break;
-            case DataType.Short:
-                writer.Write((short)value);
-                break;
-            case DataType.UShort:
-                writer.Write((ushort)value);
-                break;
-            case DataType.Int:
-                writer.Write((int)value);
-                break;
-            case DataType.UInt:
-                writer.Write((uint)value);
-                break;
-            case DataType.Long:
-                writer.Write((long)value);
-                break;
-            case DataType.ULong:
-                writer.Write((ulong)value);
-                break;
-            case DataType.Bool:
-                writer.Write((bool)value);
-                break;
-            case DataType.Char:
-                writer.Write((char)value);
-                break;
-            case DataType.String:
-                var str = (string)value;
-                writer.Write(str);
-                break;
-            case DataType.Float:
-                writer.Write((float)value);
-                break;
-            case DataType.Double:
-                writer.Write((double)value);
-                break;
-            case DataType.Decimal:
-                writer.Write((decimal)value);
-                break;
-            case DataType.DateTime:
-                writer.Write(((DateTime)value).ToBinary());
-                break;
-            default:
-                throw new NotSupportedException($"Data type {dataType} not supported");
+            using var ms = new MemoryStream();
+            using var writer = new BinaryWriter(ms);
+            
+            writer.Write((byte)1); // Not null marker
+            
+            switch (dataType)
+            {
+                case DataType.Byte:
+                    writer.Write((byte)value);
+                    break;
+                case DataType.SByte:
+                    writer.Write((sbyte)value);
+                    break;
+                case DataType.Short:
+                    writer.Write((short)value);
+                    break;
+                case DataType.UShort:
+                    writer.Write((ushort)value);
+                    break;
+                case DataType.Int:
+                    writer.Write((int)value);
+                    break;
+                case DataType.UInt:
+                    writer.Write((uint)value);
+                    break;
+                case DataType.Long:
+                    writer.Write((long)value);
+                    break;
+                case DataType.ULong:
+                    writer.Write((ulong)value);
+                    break;
+                case DataType.Bool:
+                    writer.Write((bool)value);
+                    break;
+                case DataType.Char:
+                    writer.Write((char)value);
+                    break;
+                case DataType.String:
+                    var str = (string)value;
+                    writer.Write(str);
+                    break;
+                case DataType.Float:
+                    writer.Write((float)value);
+                    break;
+                case DataType.Double:
+                    writer.Write((double)value);
+                    break;
+                case DataType.Decimal:
+                    writer.Write((decimal)value);
+                    break;
+                case DataType.DateTime:
+                    writer.Write(((DateTime)value).ToBinary());
+                    break;
+                default:
+                    throw new NotSupportedException($"Data type {dataType} not supported");
+            }
+            
+            return ms.ToArray();
         }
-        
-        return ms.ToArray();
+        catch (InvalidCastException ex)
+        {
+            throw new InvalidCastException(
+                $"Cannot serialize value of type '{value.GetType().Name}' as {dataType}. " +
+                $"Expected type does not match provided value.", ex);
+        }
     }
     
     public static object? Deserialize(byte[] data, DataType dataType)
@@ -124,40 +133,48 @@ public static class DataSerializer
         if (a == null) return -1;
         if (b == null) return 1;
         
-        switch (dataType)
+        try
         {
-            case DataType.Byte:
-                return ((byte)a).CompareTo((byte)b);
-            case DataType.SByte:
-                return ((sbyte)a).CompareTo((sbyte)b);
-            case DataType.Short:
-                return ((short)a).CompareTo((short)b);
-            case DataType.UShort:
-                return ((ushort)a).CompareTo((ushort)b);
-            case DataType.Int:
-                return ((int)a).CompareTo((int)b);
-            case DataType.UInt:
-                return ((uint)a).CompareTo((uint)b);
-            case DataType.Long:
-                return ((long)a).CompareTo((long)b);
-            case DataType.ULong:
-                return ((ulong)a).CompareTo((ulong)b);
-            case DataType.Bool:
-                return ((bool)a).CompareTo((bool)b);
-            case DataType.Char:
-                return ((char)a).CompareTo((char)b);
-            case DataType.String:
-                return string.Compare((string)a, (string)b, StringComparison.Ordinal);
-            case DataType.Float:
-                return ((float)a).CompareTo((float)b);
-            case DataType.Double:
-                return ((double)a).CompareTo((double)b);
-            case DataType.Decimal:
-                return ((decimal)a).CompareTo((decimal)b);
-            case DataType.DateTime:
-                return ((DateTime)a).CompareTo((DateTime)b);
-            default:
-                throw new NotSupportedException($"Data type {dataType} not supported");
+            switch (dataType)
+            {
+                case DataType.Byte:
+                    return ((byte)a).CompareTo((byte)b);
+                case DataType.SByte:
+                    return ((sbyte)a).CompareTo((sbyte)b);
+                case DataType.Short:
+                    return ((short)a).CompareTo((short)b);
+                case DataType.UShort:
+                    return ((ushort)a).CompareTo((ushort)b);
+                case DataType.Int:
+                    return ((int)a).CompareTo((int)b);
+                case DataType.UInt:
+                    return ((uint)a).CompareTo((uint)b);
+                case DataType.Long:
+                    return ((long)a).CompareTo((long)b);
+                case DataType.ULong:
+                    return ((ulong)a).CompareTo((ulong)b);
+                case DataType.Bool:
+                    return ((bool)a).CompareTo((bool)b);
+                case DataType.Char:
+                    return ((char)a).CompareTo((char)b);
+                case DataType.String:
+                    return string.Compare((string)a, (string)b, StringComparison.Ordinal);
+                case DataType.Float:
+                    return ((float)a).CompareTo((float)b);
+                case DataType.Double:
+                    return ((double)a).CompareTo((double)b);
+                case DataType.Decimal:
+                    return ((decimal)a).CompareTo((decimal)b);
+                case DataType.DateTime:
+                    return ((DateTime)a).CompareTo((DateTime)b);
+                default:
+                    throw new NotSupportedException($"Data type {dataType} not supported");
+            }
+        }
+        catch (InvalidCastException ex)
+        {
+            throw new InvalidCastException(
+                $"Cannot compare values as {dataType}. Value types: a={a.GetType().Name}, b={b.GetType().Name}", ex);
         }
     }
 }

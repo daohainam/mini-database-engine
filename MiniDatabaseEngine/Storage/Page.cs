@@ -23,6 +23,11 @@ public class Page
     
     public Page(int pageId, byte[] data)
     {
+        if (data == null)
+            throw new ArgumentNullException(nameof(data));
+        if (data.Length != PageSize)
+            throw new ArgumentException($"Data must be exactly {PageSize} bytes, got {data.Length}", nameof(data));
+        
         PageId = pageId;
         Data = data;
         IsDirty = false;

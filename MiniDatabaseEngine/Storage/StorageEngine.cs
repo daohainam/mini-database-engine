@@ -5,6 +5,18 @@ namespace MiniDatabaseEngine.Storage;
 
 /// <summary>
 /// Manages database file storage with optional memory-mapped file support
+/// 
+/// Thread Safety:
+/// This class uses ReaderWriterLockSlim to ensure thread-safe operations.
+/// Multiple threads can read concurrently, but write operations are exclusive.
+/// 
+/// Lock Ordering (to prevent deadlocks when nested locking occurs):
+/// When multiple locks need to be acquired, always acquire them in this order:
+/// 1. Database._lock (schema-level operations)
+/// 2. Table._lock (table-level operations)
+/// 3. BPlusTree._lockObject (index operations)
+/// 4. StorageEngine._lock (this class - storage operations)
+/// 5. PageCache/ExtentCache locks (cache operations)
 /// </summary>
 public class StorageEngine : IDisposable
 {
@@ -76,62 +88,70 @@ public class StorageEngine : IDisposable
         _lock.EnterReadLock();
         try
         {
-            // Check extent cache first if enabled
-            if (_useExtentCache)
-            {
-                var cachedPage = _extentCache.GetPage(pageId);
-                if (cachedPage != null)
-                    return cachedPage;
-            }
-            else
-            {
-                // Check regular cache if extent cache is disabled
-                var cachedPage = _cache.Get(pageId);
-                if (cachedPage != null)
-                    return cachedPage;
-            }
-            
-            // If extent cache is enabled, try to read entire extent
-            if (_useExtentCache)
-            {
-                var extent = ReadExtent(Extent.GetExtentId(pageId));
-                _extentCache.PutExtent(extent.ExtentId, extent);
-                return extent.GetPage(pageId);
-            }
-            else
-            {
-                // Fallback to single page read
-                var page = new Page(pageId);
-                
-                if (_useMemoryMappedFile && _memoryMappedFile != null)
-                {
-                    using var accessor = _memoryMappedFile.CreateViewAccessor(
-                        pageId * Page.PageSize,
-                        Page.PageSize,
-                        MemoryMappedFileAccess.Read);
-                        
-                    accessor.ReadArray(0, page.Data, 0, Page.PageSize);
-                }
-                else
-                {
-                    _fileStream.Seek(pageId * Page.PageSize, SeekOrigin.Begin);
-                    int totalRead = 0;
-                    while (totalRead < Page.PageSize)
-                    {
-                        int read = _fileStream.Read(page.Data, totalRead, Page.PageSize - totalRead);
-                        if (read == 0)
-                            break;
-                        totalRead += read;
-                    }
-                }
-                
-                _cache.Put(pageId, page);
-                return page;
-            }
+            return ReadPageInternal(pageId);
         }
         finally
         {
             _lock.ExitReadLock();
+        }
+    }
+    
+    /// <summary>
+    /// Internal method to read a page without acquiring the lock (caller must hold a read or write lock)
+    /// </summary>
+    private Page ReadPageInternal(int pageId)
+    {
+        // Check extent cache first if enabled
+        if (_useExtentCache)
+        {
+            var cachedPage = _extentCache.GetPage(pageId);
+            if (cachedPage != null)
+                return cachedPage;
+        }
+        else
+        {
+            // Check regular cache if extent cache is disabled
+            var cachedPage = _cache.Get(pageId);
+            if (cachedPage != null)
+                return cachedPage;
+        }
+        
+        // If extent cache is enabled, try to read entire extent
+        if (_useExtentCache)
+        {
+            var extent = ReadExtent(Extent.GetExtentId(pageId));
+            _extentCache.PutExtent(extent.ExtentId, extent);
+            return extent.GetPage(pageId);
+        }
+        else
+        {
+            // Fallback to single page read
+            var page = new Page(pageId);
+            
+            if (_useMemoryMappedFile && _memoryMappedFile != null)
+            {
+                using var accessor = _memoryMappedFile.CreateViewAccessor(
+                    pageId * Page.PageSize,
+                    Page.PageSize,
+                    MemoryMappedFileAccess.Read);
+                    
+                accessor.ReadArray(0, page.Data, 0, Page.PageSize);
+            }
+            else
+            {
+                _fileStream.Seek(pageId * Page.PageSize, SeekOrigin.Begin);
+                int totalRead = 0;
+                while (totalRead < Page.PageSize)
+                {
+                    int read = _fileStream.Read(page.Data, totalRead, Page.PageSize - totalRead);
+                    if (read == 0)
+                        break;
+                    totalRead += read;
+                }
+            }
+            
+            _cache.Put(pageId, page);
+            return page;
         }
     }
     
@@ -140,36 +160,44 @@ public class StorageEngine : IDisposable
         _lock.EnterWriteLock();
         try
         {
-            page.IsDirty = true;
-            
-            // Update both caches
-            if (_useExtentCache)
-            {
-                _extentCache.PutPage(page.PageId, page);
-            }
-            else
-            {
-                _cache.Put(page.PageId, page);
-            }
-            
-            if (_useMemoryMappedFile && _memoryMappedFile != null)
-            {
-                using var accessor = _memoryMappedFile.CreateViewAccessor(
-                    page.PageId * Page.PageSize,
-                    Page.PageSize,
-                    MemoryMappedFileAccess.Write);
-                    
-                accessor.WriteArray(0, page.Data, 0, Page.PageSize);
-            }
-            else
-            {
-                _fileStream.Seek(page.PageId * Page.PageSize, SeekOrigin.Begin);
-                _fileStream.Write(page.Data, 0, Page.PageSize);
-            }
+            WritePageInternal(page);
         }
         finally
         {
             _lock.ExitWriteLock();
+        }
+    }
+    
+    /// <summary>
+    /// Internal method to write a page without acquiring the lock (caller must hold the write lock)
+    /// </summary>
+    private void WritePageInternal(Page page)
+    {
+        page.IsDirty = true;
+        
+        // Update both caches
+        if (_useExtentCache)
+        {
+            _extentCache.PutPage(page.PageId, page);
+        }
+        else
+        {
+            _cache.Put(page.PageId, page);
+        }
+        
+        if (_useMemoryMappedFile && _memoryMappedFile != null)
+        {
+            using var accessor = _memoryMappedFile.CreateViewAccessor(
+                page.PageId * Page.PageSize,
+                Page.PageSize,
+                MemoryMappedFileAccess.Write);
+                
+            accessor.WriteArray(0, page.Data, 0, Page.PageSize);
+        }
+        else
+        {
+            _fileStream.Seek(page.PageId * Page.PageSize, SeekOrigin.Begin);
+            _fileStream.Write(page.Data, 0, Page.PageSize);
         }
     }
     
@@ -178,7 +206,7 @@ public class StorageEngine : IDisposable
         _lock.EnterWriteLock();
         try
         {
-            var header = ReadPage(HeaderPageId);
+            var header = ReadPageInternal(HeaderPageId);
             using var ms = new MemoryStream(header.Data);
             using var reader = new BinaryReader(ms);
             
@@ -192,7 +220,7 @@ public class StorageEngine : IDisposable
             writer.Write(nextPageId + 1);
             
             header.IsDirty = true;
-            WritePage(header);
+            WritePageInternal(header);
             
             // Ensure file is large enough
             long requiredSize = (nextPageId + 1) * Page.PageSize;

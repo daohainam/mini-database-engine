@@ -20,15 +20,15 @@ public class ExtentCache(int capacity)
     /// </summary>
     public Extent? GetExtent(int extentId)
     {
-        if (_cache.TryGetValue(extentId, out var node))
+        lock (_lockObject)
         {
-            lock (_lockObject)
+            if (_cache.TryGetValue(extentId, out var node))
             {
                 MoveToHead(node);
+                return node.Extent;
             }
-            return node.Extent;
+            return null;
         }
-        return null;
     }
     
     /// <summary>
@@ -130,9 +130,13 @@ public class ExtentCache(int capacity)
     /// </summary>
     public IEnumerable<Page> GetDirtyPages()
     {
-        return _cache.Values
-            .SelectMany(n => n.Extent.Pages)
-            .Where(p => p.IsDirty);
+        lock (_lockObject)
+        {
+            return _cache.Values
+                .SelectMany(n => n.Extent.Pages)
+                .Where(p => p.IsDirty)
+                .ToList();
+        }
     }
     
     /// <summary>
@@ -140,9 +144,13 @@ public class ExtentCache(int capacity)
     /// </summary>
     public IEnumerable<Extent> GetDirtyExtents()
     {
-        return _cache.Values
-            .Where(n => n.Extent.IsDirty)
-            .Select(n => n.Extent);
+        lock (_lockObject)
+        {
+            return _cache.Values
+                .Where(n => n.Extent.IsDirty)
+                .Select(n => n.Extent)
+                .ToList();
+        }
     }
     
     private void AddToHead(ExtentCacheNode node)

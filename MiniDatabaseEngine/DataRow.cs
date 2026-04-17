@@ -24,8 +24,18 @@ public class DataRow
     
     public object? this[int index]
     {
-        get => _values[index];
-        set => _values[index] = value;
+        get
+        {
+            if (index < 0 || index >= _values.Length)
+                throw new ArgumentOutOfRangeException(nameof(index), $"Column index {index} is out of range. Table has {_values.Length} columns.");
+            return _values[index];
+        }
+        set
+        {
+            if (index < 0 || index >= _values.Length)
+                throw new ArgumentOutOfRangeException(nameof(index), $"Column index {index} is out of range. Table has {_values.Length} columns.");
+            _values[index] = value;
+        }
     }
     
     public object? this[string columnName]
@@ -53,6 +63,12 @@ public class DataRow
         var value = this[columnName];
         if (value == null)
             return default;
-        return (T)value;
+        
+        // Validate type compatibility before casting
+        if (value is T typedValue)
+            return typedValue;
+        
+        throw new InvalidCastException(
+            $"Cannot cast value of type '{value.GetType().Name}' to '{typeof(T).Name}' for column '{columnName}'");
     }
 }

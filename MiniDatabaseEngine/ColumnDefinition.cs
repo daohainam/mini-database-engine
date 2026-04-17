@@ -5,10 +5,10 @@ namespace MiniDatabaseEngine;
 /// </summary>
 public class ColumnDefinition
 {
-    public string Name { get; set; }
-    public DataType DataType { get; set; }
-    public bool IsNullable { get; set; }
-    public int MaxLength { get; set; } // For string types
+    public string Name { get; }
+    public DataType DataType { get; }
+    public bool IsNullable { get; }
+    public int MaxLength { get; } // For string types
     
     public ColumnDefinition(string name, DataType dataType, bool isNullable = true, int maxLength = 255)
     {

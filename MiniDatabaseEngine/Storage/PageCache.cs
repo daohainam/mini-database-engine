@@ -22,15 +22,15 @@ public class PageCache
     
     public Page? Get(int pageId)
     {
-        if (_cache.TryGetValue(pageId, out var node))
+        lock (_lockObject)
         {
-            lock (_lockObject)
+            if (_cache.TryGetValue(pageId, out var node))
             {
                 MoveToHead(node);
+                return node.Page;
             }
-            return node.Page;
+            return null;
         }
-        return null;
     }
     
     public void Put(int pageId, Page page)
@@ -71,7 +71,10 @@ public class PageCache
     
     public IEnumerable<Page> GetDirtyPages()
     {
-        return _cache.Values.Where(n => n.Page.IsDirty).Select(n => n.Page);
+        lock (_lockObject)
+        {
+            return _cache.Values.Where(n => n.Page.IsDirty).Select(n => n.Page).ToList();
+        }
     }
     
     private void AddToHead(CacheNode node)

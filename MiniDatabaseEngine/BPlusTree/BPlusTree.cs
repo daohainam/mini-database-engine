@@ -64,6 +64,10 @@ public class BPlusTree
     
     /// <summary>
     /// Delete a key-value pair from the B+ Tree
+    /// NOTE: This is a simplified implementation that does not perform node rebalancing
+    /// or merging after deletion. This may lead to suboptimal tree structure over time
+    /// with many deletions, potentially affecting performance. For production use,
+    /// consider implementing proper node merging and redistribution.
     /// </summary>
     public bool Delete(object key)
     {
@@ -92,17 +96,20 @@ public class BPlusTree
     {
         lock (_lockObject)
         {
+            var results = new List<KeyValuePair<object, object?>>();
             var leaf = GetFirstLeaf();
             
             while (leaf != null)
             {
                 for (int i = 0; i < leaf.Keys.Count; i++)
                 {
-                    yield return new KeyValuePair<object, object?>(leaf.Keys[i], leaf.Values[i]);
+                    results.Add(new KeyValuePair<object, object?>(leaf.Keys[i], leaf.Values[i]));
                 }
                 
                 leaf = leaf.Next;
             }
+            
+            return results;
         }
     }
     
@@ -113,6 +120,7 @@ public class BPlusTree
     {
         lock (_lockObject)
         {
+            var results = new List<KeyValuePair<object, object?>>();
             var leaf = minKey != null ? FindLeafNode(minKey) : GetFirstLeaf();
             
             while (leaf != null)
@@ -125,13 +133,15 @@ public class BPlusTree
                         continue;
                         
                     if (maxKey != null && _comparer.Compare(key, maxKey) > 0)
-                        yield break;
+                        return results;
                         
-                    yield return new KeyValuePair<object, object?>(key, leaf.Values[i]);
+                    results.Add(new KeyValuePair<object, object?>(key, leaf.Values[i]));
                 }
                 
                 leaf = leaf.Next;
             }
+            
+            return results;
         }
     }
     
@@ -246,7 +256,13 @@ public class BPlusTree
             return;
         }
         
-        var parent = (BPlusTreeInternalNode)left.Parent!;
+        // Parent should never be null for non-root nodes
+        if (left.Parent == null)
+        {
+            throw new InvalidOperationException("Parent node is null for non-root node during split operation");
+        }
+        
+        var parent = (BPlusTreeInternalNode)left.Parent;
         int index = FindKeyIndex(parent.Keys, key);
         
         parent.Keys.Insert(index, key);
