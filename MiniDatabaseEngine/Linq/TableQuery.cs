@@ -370,8 +370,8 @@ internal static class PrimaryKeyConstraintParser
     {
         constraint = new IndexRangeConstraint();
 
-        var left = StripConvert(comparison.Left);
-        var right = StripConvert(comparison.Right);
+        var left = ExpressionUtils.StripConvert(comparison.Left);
+        var right = ExpressionUtils.StripConvert(comparison.Right);
 
         if (IsPrimaryKeyAccessor(left, rowParameter, primaryKeyColumn) &&
             TryEvaluateValue(right, rowParameter, primaryKeyType, out var rightValue))
@@ -435,7 +435,7 @@ internal static class PrimaryKeyConstraintParser
             return false;
         }
 
-        if (StripConvert(method.Object) != rowParameter)
+        if (ExpressionUtils.StripConvert(method.Object) != rowParameter)
             return false;
 
         if (method.Arguments[0] is not ConstantExpression columnConstant || columnConstant.Value is not string columnName)
@@ -520,17 +520,6 @@ internal static class PrimaryKeyConstraintParser
         return visitor.ContainsParameter;
     }
 
-    private static Expression StripConvert(Expression expression)
-    {
-        while (expression is UnaryExpression unary &&
-               (unary.NodeType == ExpressionType.Convert || unary.NodeType == ExpressionType.ConvertChecked))
-        {
-            expression = unary.Operand;
-        }
-
-        return expression;
-    }
-
     private static bool IsComparisonOperator(ExpressionType nodeType)
     {
         return nodeType == ExpressionType.Equal ||
@@ -578,7 +567,7 @@ internal class OrderByExpressionVisitor : ExpressionVisitor
             if (node.Arguments.Count >= 2)
             {
                 var lambda = (LambdaExpression)((UnaryExpression)node.Arguments[1]).Operand;
-                var body = StripConvert(lambda.Body);
+                var body = ExpressionUtils.StripConvert(lambda.Body);
                 
                 // Try to extract column name from expression
                 if (body is MemberExpression member)
@@ -598,7 +587,11 @@ internal class OrderByExpressionVisitor : ExpressionVisitor
         return base.VisitMethodCall(node);
     }
 
-    private static Expression StripConvert(Expression expression)
+}
+
+internal static class ExpressionUtils
+{
+    public static Expression StripConvert(Expression expression)
     {
         while (expression is UnaryExpression unary &&
                (unary.NodeType == ExpressionType.Convert || unary.NodeType == ExpressionType.ConvertChecked))
