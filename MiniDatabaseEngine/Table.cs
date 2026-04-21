@@ -63,6 +63,8 @@ public class Table
             if (transaction != null)
             {
                 transaction.LogInsert(_schema.TableName, key, serialized);
+                _nextRowId++;
+                return;
             }
             
             // Store in B+ Tree
@@ -94,6 +96,7 @@ public class Table
             if (transaction != null)
             {
                 transaction.LogUpdate(_schema.TableName, key, oldValue, serialized);
+                return true;
             }
             
             _index.Insert(key, serialized);
@@ -123,6 +126,7 @@ public class Table
             if (transaction != null)
             {
                 transaction.LogDelete(_schema.TableName, key, oldValue);
+                return true;
             }
             
             return _index.Delete(key);

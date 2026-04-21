@@ -59,7 +59,7 @@ public class Database : IDisposable
         _tables = new ConcurrentDictionary<string, Table>();
         _lock = new ReaderWriterLockSlim();
         _walManager = new WALManager(filePath);
-        _transactionManager = new TransactionManager(_walManager, ApplyUndoEntry);
+        _transactionManager = new TransactionManager(_walManager, ApplyCommittedEntries);
         _pendingRecoveryEntries = new Dictionary<string, List<WALEntry>>();
 
         LoadCatalogFromStorage();
@@ -191,15 +191,15 @@ public class Database : IDisposable
         _walManager.Flush();
     }
     
-    /// <summary>
-    /// Apply an undo entry during rollback
-    /// </summary>
-    private void ApplyUndoEntry(WALEntry entry)
+    private void ApplyCommittedEntries(IReadOnlyList<WALEntry> entries)
     {
-        if (!_tables.TryGetValue(entry.TableName, out var table))
-            return;
+        foreach (var entry in entries)
+        {
+            if (!_tables.TryGetValue(entry.TableName, out var table))
+                continue;
 
-        ApplyWALEntryToTable(table, entry);
+            ApplyWALEntryToTable(table, entry);
+        }
     }
     
     /// <summary>

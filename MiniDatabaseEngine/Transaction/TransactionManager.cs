@@ -11,12 +11,12 @@ public class TransactionManager : IDisposable
     private readonly ConcurrentDictionary<long, Transaction> _activeTransactions;
     private long _nextTransactionId;
     private readonly ReaderWriterLockSlim _lock;
-    private readonly Action<WALEntry> _undoCallback;
+    private readonly Action<IReadOnlyList<WALEntry>> _commitApplyCallback;
 
-    public TransactionManager(WALManager walManager, Action<WALEntry> undoCallback)
+    public TransactionManager(WALManager walManager, Action<IReadOnlyList<WALEntry>> commitApplyCallback)
     {
         _walManager = walManager;
-        _undoCallback = undoCallback;
+        _commitApplyCallback = commitApplyCallback;
         _activeTransactions = new ConcurrentDictionary<long, Transaction>();
         _nextTransactionId = 1;
         _lock = new ReaderWriterLockSlim();
@@ -31,7 +31,7 @@ public class TransactionManager : IDisposable
         try
         {
             long transactionId = _nextTransactionId++;
-            var transaction = new Transaction(transactionId, _walManager, this, _undoCallback);
+            var transaction = new Transaction(transactionId, _walManager, this, _commitApplyCallback);
             _activeTransactions[transactionId] = transaction;
             return transaction;
         }
@@ -85,7 +85,6 @@ public class TransactionManager : IDisposable
             var entries = _walManager.ReadAllEntries();
             var transactions = new Dictionary<long, List<WALEntry>>();
             var committedTransactions = new HashSet<long>();
-            var rolledBackTransactions = new HashSet<long>();
 
             // Group entries by transaction
             foreach (var entry in entries)
@@ -99,7 +98,7 @@ public class TransactionManager : IDisposable
                 }
                 else if (entry.OperationType == WALOperationType.Rollback)
                 {
-                    rolledBackTransactions.Add(entry.TransactionId);
+                    continue;
                 }
                 else if (entry.OperationType != WALOperationType.BeginTransaction)
                 {
@@ -123,23 +122,6 @@ public class TransactionManager : IDisposable
                 }
             }
 
-            // Rollback uncommitted transactions (not committed and not rolled back)
-            var uncommittedTransactions = transactions.Keys
-                .Where(id => !committedTransactions.Contains(id) && !rolledBackTransactions.Contains(id))
-                .ToList();
-
-            foreach (var txnId in uncommittedTransactions)
-            {
-                if (transactions.TryGetValue(txnId, out var txnEntries))
-                {
-                    // Undo operations in reverse order
-                    foreach (var entry in txnEntries.AsEnumerable().Reverse())
-                    {
-                        RollbackEntry(entry, applyEntry);
-                    }
-                }
-            }
-
             // Update next transaction ID
             if (entries.Count > 0)
             {
@@ -150,42 +132,6 @@ public class TransactionManager : IDisposable
         {
             _lock.ExitWriteLock();
         }
-    }
-
-    private void RollbackEntry(WALEntry entry, Action<WALEntry> applyEntry)
-    {
-        // Create an undo entry
-        var undoEntry = new WALEntry
-        {
-            TransactionId = entry.TransactionId,
-            TableName = entry.TableName,
-            Key = entry.Key,
-            SequenceNumber = entry.SequenceNumber
-        };
-
-        switch (entry.OperationType)
-        {
-            case WALOperationType.Insert:
-                // Undo insert by deleting
-                undoEntry.OperationType = WALOperationType.Delete;
-                undoEntry.OldValue = entry.NewValue;
-                break;
-
-            case WALOperationType.Update:
-                // Undo update by restoring old value
-                undoEntry.OperationType = WALOperationType.Update;
-                undoEntry.NewValue = entry.OldValue;
-                undoEntry.OldValue = entry.NewValue;
-                break;
-
-            case WALOperationType.Delete:
-                // Undo delete by inserting old value
-                undoEntry.OperationType = WALOperationType.Insert;
-                undoEntry.NewValue = entry.OldValue;
-                break;
-        }
-
-        applyEntry(undoEntry);
     }
 
     public void Dispose()
