@@ -1,5 +1,6 @@
 using Xunit;
 using MiniDatabaseEngine.Storage;
+using System.Collections.Concurrent;
 
 namespace MiniDatabaseEngine.Tests;
 
@@ -261,6 +262,180 @@ public class ImprovementTests
         {
             if (File.Exists(testDbPath))
                 File.Delete(testDbPath);
+        }
+    }
+
+    [Fact]
+    public void Database_Metrics_Are_Collected()
+    {
+        var testDbPath = Path.Combine(Path.GetTempPath(), $"test_metrics_{Guid.NewGuid()}.mde");
+        try
+        {
+            using var db = new Database(testDbPath);
+            var columns = new List<ColumnDefinition>
+            {
+                new("Id", DataType.Int, false),
+                new("Name", DataType.String)
+            };
+
+            var table = db.CreateTable("MetricsUsers", columns, "Id");
+            var row = new DataRow(table.Schema);
+            row["Id"] = 1;
+            row["Name"] = "Alice";
+            db.Insert("MetricsUsers", row);
+
+            var updated = new DataRow(table.Schema);
+            updated["Id"] = 1;
+            updated["Name"] = "Alice Updated";
+            db.Update("MetricsUsers", 1, updated);
+            db.Delete("MetricsUsers", 1);
+            db.Flush();
+            db.Checkpoint();
+
+            var metrics = db.GetMetricsSnapshot();
+            Assert.True(metrics.TablesCreated >= 1);
+            Assert.True(metrics.Inserts >= 1);
+            Assert.True(metrics.Updates >= 1);
+            Assert.True(metrics.Deletes >= 1);
+            Assert.True(metrics.Flushes >= 1);
+            Assert.True(metrics.Checkpoints >= 1);
+        }
+        finally
+        {
+            if (File.Exists(testDbPath))
+                File.Delete(testDbPath);
+
+            var walPath = Path.ChangeExtension(testDbPath, ".wal");
+            if (File.Exists(walPath))
+                File.Delete(walPath);
+        }
+    }
+
+    [Fact]
+    public void Database_Emits_Structured_Logs()
+    {
+        var testDbPath = Path.Combine(Path.GetTempPath(), $"test_logs_{Guid.NewGuid()}.mde");
+        try
+        {
+            var logger = new InMemoryDatabaseLogger();
+            var options = new DatabaseOptions { Logger = logger };
+            using var db = new Database(testDbPath, options: options);
+
+            var columns = new List<ColumnDefinition>
+            {
+                new("Id", DataType.Int, false),
+                new("Name", DataType.String)
+            };
+
+            db.CreateTable("LoggedUsers", columns, "Id");
+            Assert.Contains(logger.Entries, e => e.EventName == "table.created");
+            Assert.Contains(logger.Entries, e => e.EventName == "database.opened");
+        }
+        finally
+        {
+            if (File.Exists(testDbPath))
+                File.Delete(testDbPath);
+
+            var walPath = Path.ChangeExtension(testDbPath, ".wal");
+            if (File.Exists(walPath))
+                File.Delete(walPath);
+        }
+    }
+
+    [Fact]
+    public void Database_Backup_And_Restore_Works()
+    {
+        var testDbPath = Path.Combine(Path.GetTempPath(), $"test_backup_{Guid.NewGuid()}.mde");
+        var backupRoot = Path.Combine(Path.GetTempPath(), $"mde_backup_{Guid.NewGuid()}");
+        var restoredPath = Path.Combine(Path.GetTempPath(), $"test_restore_{Guid.NewGuid()}.mde");
+        try
+        {
+            using (var db = new Database(testDbPath))
+            {
+                var columns = new List<ColumnDefinition>
+                {
+                    new("Id", DataType.Int, false),
+                    new("Name", DataType.String)
+                };
+
+                var table = db.CreateTable("BackupUsers", columns, "Id");
+                var row = new DataRow(table.Schema);
+                row["Id"] = 7;
+                row["Name"] = "Recovered";
+                db.Insert("BackupUsers", row);
+
+                var backupPath = db.CreateBackup(backupRoot, includeWal: true);
+                Database.RestoreBackup(backupPath, restoredPath, overwrite: true);
+            }
+
+            using var restoredDb = new Database(restoredPath);
+            var restoredColumns = new List<ColumnDefinition>
+            {
+                new("Id", DataType.Int, false),
+                new("Name", DataType.String)
+            };
+            var restoredTable = restoredDb.CreateTable("BackupUsers", restoredColumns, "Id");
+            var restoredRow = restoredTable.SelectByKey(7);
+            Assert.NotNull(restoredRow);
+            Assert.Equal("Recovered", restoredRow["Name"]);
+        }
+        finally
+        {
+            if (Directory.Exists(backupRoot))
+                Directory.Delete(backupRoot, recursive: true);
+
+            if (File.Exists(testDbPath))
+                File.Delete(testDbPath);
+            if (File.Exists(Path.ChangeExtension(testDbPath, ".wal")))
+                File.Delete(Path.ChangeExtension(testDbPath, ".wal"));
+
+            if (File.Exists(restoredPath))
+                File.Delete(restoredPath);
+            if (File.Exists(Path.ChangeExtension(restoredPath, ".wal")))
+                File.Delete(Path.ChangeExtension(restoredPath, ".wal"));
+        }
+    }
+
+    [Fact]
+    public void Database_Integrity_Check_Detects_Corrupted_Header()
+    {
+        var testDbPath = Path.Combine(Path.GetTempPath(), $"test_integrity_{Guid.NewGuid()}.mde");
+        try
+        {
+            using (var db = new Database(testDbPath))
+            {
+                db.Flush();
+            }
+
+            using (var fs = new FileStream(testDbPath, FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+            using (var writer = new BinaryWriter(fs))
+            {
+                writer.Write(0); // Corrupt magic number
+            }
+
+            using var db = new Database(testDbPath);
+            var report = db.CheckIntegrity();
+            Assert.False(report.IsHealthy);
+            Assert.Contains(report.Issues, issue => issue.Contains("magic number", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            if (File.Exists(testDbPath))
+                File.Delete(testDbPath);
+
+            var walPath = Path.ChangeExtension(testDbPath, ".wal");
+            if (File.Exists(walPath))
+                File.Delete(walPath);
+        }
+    }
+
+    private sealed class InMemoryDatabaseLogger : IDatabaseLogger
+    {
+        public ConcurrentBag<DatabaseLogEntry> Entries { get; } = new();
+
+        public void Log(DatabaseLogEntry entry)
+        {
+            Entries.Add(entry);
         }
     }
 }
