@@ -886,16 +886,14 @@ public class Database : IDisposable
 
     private static void EnsurePathWithinDirectory(string candidatePath, string rootPath, string parameterName)
     {
-        var normalizedRoot = rootPath.EndsWith(Path.DirectorySeparatorChar)
-            ? rootPath
-            : rootPath + Path.DirectorySeparatorChar;
-
-        var pathComparison = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-
-        if (!candidatePath.StartsWith(normalizedRoot, pathComparison))
+        var relativePath = Path.GetRelativePath(rootPath, candidatePath);
+        if (relativePath == ".."
+            || relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            || relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal)
+            || Path.IsPathRooted(relativePath))
+        {
             throw new ArgumentException("Resolved path escapes the configured backup directory.", parameterName);
+        }
     }
 
     private static string ReadBoundedString(BinaryReader reader, int maxByteLength, string fieldName)

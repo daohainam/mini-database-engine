@@ -25,6 +25,9 @@ internal static class BinaryDecodingGuards
         while (shift < 32)
         {
             byte b = reader.ReadByte();
+            if (shift == 28 && (b & 0xF0) != 0)
+                throw new InvalidDataException("7-bit encoded value exceeds Int32 range.");
+
             result |= (uint)(b & 0x7F) << shift;
             if ((b & 0x80) == 0)
             {
