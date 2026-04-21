@@ -75,6 +75,22 @@ public class TransactionManager : IDisposable
     }
 
     /// <summary>
+    /// Gets the next transaction ID that will be assigned.
+    /// </summary>
+    public long GetNextTransactionIdHint()
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            return _nextTransactionId;
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+
+    /// <summary>
     /// Recover from WAL - replay uncommitted transactions or rollback incomplete ones
     /// </summary>
     public void RecoverFromWAL(Action<WALEntry> applyEntry)
@@ -82,7 +98,8 @@ public class TransactionManager : IDisposable
         _lock.EnterWriteLock();
         try
         {
-            var entries = _walManager.ReadAllEntries();
+            var recoveryMetadata = _walManager.GetRecoveryMetadata();
+            var entries = _walManager.ReadEntriesForRecovery();
             var transactions = new Dictionary<long, List<WALEntry>>();
             var committedTransactions = new HashSet<long>();
 
@@ -126,9 +143,19 @@ public class TransactionManager : IDisposable
             }
 
             // Update next transaction ID
-            if (entries.Count > 0)
+            if (recoveryMetadata.LastSequenceNumber > 0)
             {
-                _nextTransactionId = entries.Max(e => e.TransactionId) + 1;
+                var derivedNextTransactionId = entries
+                    .Where(e => e.TransactionId > 0)
+                    .Select(e => e.TransactionId)
+                    .DefaultIfEmpty(0)
+                    .Max() + 1;
+                var metadataNextTransactionId = recoveryMetadata.NextTransactionIdHint;
+                var computedNextTransactionId = Math.Max(derivedNextTransactionId, metadataNextTransactionId);
+
+                _nextTransactionId = Math.Max(
+                    _nextTransactionId,
+                    computedNextTransactionId);
             }
         }
         finally

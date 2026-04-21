@@ -178,7 +178,10 @@ public class Database : IDisposable
     {
         SaveCatalogToStorage();
         _storage.Flush();
-        _walManager.Checkpoint();
+        var activeTransactions = _transactionManager.GetActiveTransactionIds();
+        var nextTransactionIdHint = _transactionManager.GetNextTransactionIdHint();
+        _walManager.Checkpoint(activeTransactions, nextTransactionIdHint);
+        _walManager.TruncateAfterCheckpoint();
     }
     
     /// <summary>

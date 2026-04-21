@@ -19,6 +19,8 @@ public enum WALOperationType
 /// </summary>
 public class WALEntry
 {
+    private const int MaxCheckpointActiveTransactionCount = 100_000;
+
     public long TransactionId { get; set; }
     public WALOperationType OperationType { get; set; }
     public string TableName { get; set; } = string.Empty;
@@ -27,6 +29,8 @@ public class WALEntry
     public byte[]? NewValue { get; set; }
     public long Timestamp { get; set; }
     public long SequenceNumber { get; set; }
+    public List<long> CheckpointActiveTransactionIds { get; set; } = new();
+    public long CheckpointNextTransactionId { get; set; }
 
     public WALEntry()
     {
@@ -82,6 +86,12 @@ public class WALEntry
 
         writer.Write(Timestamp);
         writer.Write(SequenceNumber);
+        writer.Write(CheckpointActiveTransactionIds.Count);
+        foreach (var transactionId in CheckpointActiveTransactionIds)
+        {
+            writer.Write(transactionId);
+        }
+        writer.Write(CheckpointNextTransactionId);
 
         return ms.ToArray();
     }
@@ -123,6 +133,26 @@ public class WALEntry
 
         entry.Timestamp = reader.ReadInt64();
         entry.SequenceNumber = reader.ReadInt64();
+        
+        // Backward-compatible metadata read (older entries may not contain checkpoint metadata)
+        if (ms.Position < ms.Length)
+        {
+            int checkpointActiveTransactionCount = reader.ReadInt32();
+            if (checkpointActiveTransactionCount < 0 || checkpointActiveTransactionCount > MaxCheckpointActiveTransactionCount)
+            {
+                throw new InvalidDataException($"Invalid checkpoint transaction count: {checkpointActiveTransactionCount}");
+            }
+
+            for (int i = 0; i < checkpointActiveTransactionCount; i++)
+            {
+                entry.CheckpointActiveTransactionIds.Add(reader.ReadInt64());
+            }
+        }
+
+        if (ms.Position < ms.Length)
+        {
+            entry.CheckpointNextTransactionId = reader.ReadInt64();
+        }
 
         return entry;
     }

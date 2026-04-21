@@ -1,5 +1,13 @@
 namespace MiniDatabaseEngine.Transaction;
 
+public sealed class WALRecoveryMetadata
+{
+    public long LastSequenceNumber { get; init; }
+    public long LastCheckpointSequence { get; init; }
+    public IReadOnlyList<long> ActiveTransactionsAtCheckpoint { get; init; } = Array.Empty<long>();
+    public long NextTransactionIdHint { get; init; }
+}
+
 /// <summary>
 /// Manages the Write-Ahead Log file
 /// </summary>
@@ -111,6 +119,11 @@ public class WALManager : IDisposable
                 // Reached end of valid entries
                 break;
             }
+            catch (InvalidDataException)
+            {
+                // Corrupted entry payload - stop at last valid entry
+                break;
+            }
         }
 
         return entries;
@@ -138,16 +151,30 @@ public class WALManager : IDisposable
     /// </summary>
     public void Checkpoint()
     {
+        Checkpoint(Array.Empty<long>(), 0);
+    }
+
+    /// <summary>
+    /// Perform a checkpoint and persist recovery metadata.
+    /// </summary>
+    public void Checkpoint(IReadOnlyList<long> activeTransactionIds, long nextTransactionIdHint)
+    {
         _lock.EnterWriteLock();
         try
         {
-            _checkpointSequence = _sequenceNumber;
+            var checkpointSequence = ++_sequenceNumber;
+            _checkpointSequence = checkpointSequence;
             
             var entry = new WALEntry
             {
                 TransactionId = -1,
                 OperationType = WALOperationType.Checkpoint,
-                SequenceNumber = _sequenceNumber
+                SequenceNumber = checkpointSequence,
+                CheckpointActiveTransactionIds = activeTransactionIds
+                    .Distinct()
+                    .OrderBy(x => x)
+                    .ToList(),
+                CheckpointNextTransactionId = nextTransactionIdHint
             };
 
             var serialized = entry.Serialize();
@@ -177,10 +204,18 @@ public class WALManager : IDisposable
             var lastCheckpoint = entries.LastOrDefault(e => e.OperationType == WALOperationType.Checkpoint);
             if (lastCheckpoint == null)
                 return;
+            
+            var activeAtCheckpoint = new HashSet<long>(lastCheckpoint.CheckpointActiveTransactionIds);
 
-            // Keep only committed transactions after the checkpoint
+            // Keep entries needed for safe recovery:
+            // 1) latest checkpoint metadata entry
+            // 2) all entries after checkpoint
+            // 3) all entries for transactions that were active at checkpoint
             var entriesToKeep = entries
-                .Where(e => e.SequenceNumber > lastCheckpoint.SequenceNumber)
+                .Where(e =>
+                    e.SequenceNumber >= lastCheckpoint.SequenceNumber ||
+                    (e.TransactionId > 0 && activeAtCheckpoint.Contains(e.TransactionId)))
+                .OrderBy(e => e.SequenceNumber)
                 .ToList();
 
             // Rewrite the WAL file
@@ -196,6 +231,19 @@ public class WALManager : IDisposable
             }
 
             writer.Flush();
+            _walStream.Flush(true);
+
+            if (entriesToKeep.Count > 0)
+            {
+                _sequenceNumber = entriesToKeep.Max(e => e.SequenceNumber);
+                var latestCheckpoint = entriesToKeep.LastOrDefault(e => e.OperationType == WALOperationType.Checkpoint);
+                _checkpointSequence = latestCheckpoint?.SequenceNumber ?? 0;
+            }
+            else
+            {
+                _sequenceNumber = 0;
+                _checkpointSequence = 0;
+            }
         }
         finally
         {
@@ -235,6 +283,58 @@ public class WALManager : IDisposable
         finally
         {
             _lock.ExitWriteLock();
+        }
+    }
+    
+    /// <summary>
+    /// Returns metadata describing the latest recovery boundary.
+    /// </summary>
+    public WALRecoveryMetadata GetRecoveryMetadata()
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            var entries = ReadAllEntriesInternal();
+            var lastCheckpoint = entries.LastOrDefault(e => e.OperationType == WALOperationType.Checkpoint);
+
+            return new WALRecoveryMetadata
+            {
+                LastSequenceNumber = entries.Count == 0 ? 0 : entries.Max(e => e.SequenceNumber),
+                LastCheckpointSequence = lastCheckpoint?.SequenceNumber ?? 0,
+                ActiveTransactionsAtCheckpoint = lastCheckpoint?.CheckpointActiveTransactionIds.ToArray() ?? Array.Empty<long>(),
+                NextTransactionIdHint = lastCheckpoint?.CheckpointNextTransactionId ?? 0
+            };
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+
+    /// <summary>
+    /// Read the minimal set of entries needed for crash recovery.
+    /// </summary>
+    public List<WALEntry> ReadEntriesForRecovery()
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            var entries = ReadAllEntriesInternal();
+            var lastCheckpoint = entries.LastOrDefault(e => e.OperationType == WALOperationType.Checkpoint);
+            if (lastCheckpoint == null)
+                return entries;
+
+            var activeAtCheckpoint = new HashSet<long>(lastCheckpoint.CheckpointActiveTransactionIds);
+            return entries
+                .Where(e =>
+                    e.SequenceNumber >= lastCheckpoint.SequenceNumber ||
+                    (e.TransactionId > 0 && activeAtCheckpoint.Contains(e.TransactionId)))
+                .OrderBy(e => e.SequenceNumber)
+                .ToList();
+        }
+        finally
+        {
+            _lock.ExitReadLock();
         }
     }
 
