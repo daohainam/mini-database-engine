@@ -79,6 +79,8 @@ public class Table
     
     /// <summary>
     /// Update a row by primary key
+    /// Returns true when the target row exists and the update is accepted.
+    /// For transactional calls, accepted updates are buffered and applied on commit.
     /// </summary>
     public bool Update(object key, DataRow row, Transaction.Transaction? transaction = null)
     {
@@ -110,6 +112,8 @@ public class Table
     
     /// <summary>
     /// Delete a row by primary key
+    /// Returns true when the target row exists and the delete is accepted.
+    /// For transactional calls, accepted deletes are buffered and applied on commit.
     /// </summary>
     public bool Delete(object key, Transaction.Transaction? transaction = null)
     {
