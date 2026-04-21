@@ -163,7 +163,7 @@ public class Table
         {
             return _index.GetAll()
                 .Where(kvp => kvp.Value is byte[])
-                .Select(kvp => new KeyValuePair<object, byte[]>(kvp.Key, (byte[])((byte[])kvp.Value!).Clone()))
+                .Select(kvp => new KeyValuePair<object, byte[]>(kvp.Key, ((byte[])kvp.Value!).ToArray()))
                 .ToList();
         }
         finally
