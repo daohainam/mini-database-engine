@@ -45,7 +45,7 @@ public class Table
     }
     
     public TableSchema Schema => _schema;
-    
+
     /// <summary>
     /// Insert a new row into the table
     /// </summary>
@@ -148,6 +148,52 @@ public class Table
             else if (value != null)
             {
                 _index.Insert(key, value);
+            }
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
+    }
+
+    internal List<KeyValuePair<object, byte[]>> ExportPersistedEntries()
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            return _index.GetAll()
+                .Where(kvp => kvp.Value is byte[])
+                .Select(kvp => new KeyValuePair<object, byte[]>(kvp.Key, (byte[])((byte[])kvp.Value!).Clone()))
+                .ToList();
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+
+    internal void LoadPersistedEntries(IEnumerable<KeyValuePair<object, byte[]>> entries)
+    {
+        _lock.EnterWriteLock();
+        try
+        {
+            foreach (var entry in entries)
+            {
+                _index.Insert(entry.Key, (byte[])entry.Value.Clone());
+            }
+
+            if (string.IsNullOrEmpty(_schema.PrimaryKeyColumn))
+            {
+                var maxAutoKey = _index.GetAll()
+                    .Select(kvp => kvp.Key)
+                    .OfType<int>()
+                    .DefaultIfEmpty(-1)
+                    .Max();
+                _nextRowId = Math.Max(0, maxAutoKey + 1);
+            }
+            else
+            {
+                _nextRowId = _index.GetAll().Count();
             }
         }
         finally
