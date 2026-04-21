@@ -19,6 +19,8 @@ public enum WALOperationType
 /// </summary>
 public class WALEntry
 {
+    private const int MaxCheckpointActiveTransactionCount = 100_000;
+
     public long TransactionId { get; set; }
     public WALOperationType OperationType { get; set; }
     public string TableName { get; set; } = string.Empty;
@@ -136,6 +138,11 @@ public class WALEntry
         if (ms.Position < ms.Length)
         {
             int checkpointActiveTransactionCount = reader.ReadInt32();
+            if (checkpointActiveTransactionCount < 0 || checkpointActiveTransactionCount > MaxCheckpointActiveTransactionCount)
+            {
+                throw new InvalidDataException($"Invalid checkpoint transaction count: {checkpointActiveTransactionCount}");
+            }
+
             for (int i = 0; i < checkpointActiveTransactionCount; i++)
             {
                 entry.CheckpointActiveTransactionIds.Add(reader.ReadInt64());

@@ -119,6 +119,11 @@ public class WALManager : IDisposable
                 // Reached end of valid entries
                 break;
             }
+            catch (InvalidDataException)
+            {
+                // Corrupted entry payload - stop at last valid entry
+                break;
+            }
         }
 
         return entries;
@@ -208,8 +213,7 @@ public class WALManager : IDisposable
             // 3) all entries for transactions that were active at checkpoint
             var entriesToKeep = entries
                 .Where(e =>
-                    e.SequenceNumber == lastCheckpoint.SequenceNumber ||
-                    e.SequenceNumber > lastCheckpoint.SequenceNumber ||
+                    e.SequenceNumber >= lastCheckpoint.SequenceNumber ||
                     (e.TransactionId > 0 && activeAtCheckpoint.Contains(e.TransactionId)))
                 .OrderBy(e => e.SequenceNumber)
                 .ToList();
@@ -297,10 +301,7 @@ public class WALManager : IDisposable
             {
                 LastSequenceNumber = entries.Count == 0 ? 0 : entries.Max(e => e.SequenceNumber),
                 LastCheckpointSequence = lastCheckpoint?.SequenceNumber ?? 0,
-                ActiveTransactionsAtCheckpoint = lastCheckpoint?.CheckpointActiveTransactionIds
-                    .Distinct()
-                    .OrderBy(x => x)
-                    .ToArray() ?? Array.Empty<long>(),
+                ActiveTransactionsAtCheckpoint = lastCheckpoint?.CheckpointActiveTransactionIds.ToArray() ?? Array.Empty<long>(),
                 NextTransactionIdHint = lastCheckpoint?.CheckpointNextTransactionId ?? 0
             };
         }
@@ -326,7 +327,7 @@ public class WALManager : IDisposable
             var activeAtCheckpoint = new HashSet<long>(lastCheckpoint.CheckpointActiveTransactionIds);
             return entries
                 .Where(e =>
-                    e.SequenceNumber > lastCheckpoint.SequenceNumber ||
+                    e.SequenceNumber >= lastCheckpoint.SequenceNumber ||
                     (e.TransactionId > 0 && activeAtCheckpoint.Contains(e.TransactionId)))
                 .OrderBy(e => e.SequenceNumber)
                 .ToList();

@@ -147,15 +147,15 @@ public class TransactionManager : IDisposable
             {
                 var derivedNextTransactionId = entries
                     .Where(e => e.TransactionId > 0)
-                    .DefaultIfEmpty(new WALEntry { TransactionId = 0 })
-                    .Max(e => e.TransactionId) + 1;
+                    .Select(e => e.TransactionId)
+                    .DefaultIfEmpty(0)
+                    .Max() + 1;
+                var metadataNextTransactionId = recoveryMetadata.NextTransactionIdHint;
+                var computedNextTransactionId = Math.Max(derivedNextTransactionId, metadataNextTransactionId);
 
-                _nextTransactionId = new[]
-                {
+                _nextTransactionId = Math.Max(
                     _nextTransactionId,
-                    derivedNextTransactionId,
-                    recoveryMetadata.NextTransactionIdHint
-                }.Max();
+                    computedNextTransactionId);
             }
         }
         finally
