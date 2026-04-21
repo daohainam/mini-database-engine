@@ -63,6 +63,8 @@ public class Table
             if (transaction != null)
             {
                 transaction.LogInsert(_schema.TableName, key, serialized);
+                // Reserve this generated slot up front to keep key allocation monotonic.
+                // Rollbacks may leave gaps, which is acceptable for generated keys.
                 _nextRowId++;
                 return;
             }

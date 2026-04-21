@@ -98,6 +98,9 @@ public class TransactionManager : IDisposable
                 }
                 else if (entry.OperationType == WALOperationType.Rollback)
                 {
+                    // With deferred-write transactions, data changes are not applied before commit.
+                    // A rollback record therefore indicates "discard buffered writes", so there is
+                    // nothing in persisted table state to undo during recovery.
                     continue;
                 }
                 else if (entry.OperationType != WALOperationType.BeginTransaction)
