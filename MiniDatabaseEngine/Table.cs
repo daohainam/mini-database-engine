@@ -58,7 +58,7 @@ public class Table
             ValidateRowForWrite(row);
 
             var keyExists = _index.Search(key) != null;
-            var keyPendingInTransaction = transaction?.HasBufferedValueForKey(_schema.TableName, key) ?? false;
+            var keyPendingInTransaction = transaction?.HasBufferedValueForKey(_schema.TableName, key, GetPrimaryKeyDataType()) ?? false;
             if (keyExists || keyPendingInTransaction)
                 throw new InvalidOperationException($"Duplicate primary key value '{key}' for table '{_schema.TableName}'.");
             
@@ -358,6 +358,15 @@ public class Table
             DataType.DateTime => value is DateTime,
             _ => false
         };
+    }
+
+    private DataType GetPrimaryKeyDataType()
+    {
+        if (string.IsNullOrEmpty(_schema.PrimaryKeyColumn))
+            return DataType.Int;
+
+        var keyColumn = _schema.Columns.First(c => c.Name == _schema.PrimaryKeyColumn);
+        return keyColumn.DataType;
     }
     
     private DataRow DeserializeRow(byte[] data)
