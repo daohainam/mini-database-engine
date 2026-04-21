@@ -347,7 +347,7 @@ public class Database : IDisposable
         Directory.CreateDirectory(backupDirectory);
 
         var namePrefix = string.IsNullOrWhiteSpace(backupName)
-            ? $"backup-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}"
+            ? $"backup-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfffffff}-{Guid.NewGuid():N}"
             : backupName.Trim();
         var backupPath = Path.Combine(backupDirectory, namePrefix);
         Directory.CreateDirectory(backupPath);
@@ -868,6 +868,7 @@ public class Database : IDisposable
         catch
         {
             // Logging must never impact database operations.
+            System.Diagnostics.Debug.WriteLine($"MiniDatabaseEngine logging failure for event '{eventName}'.");
         }
     }
 }

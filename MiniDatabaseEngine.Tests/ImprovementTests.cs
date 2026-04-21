@@ -369,12 +369,7 @@ public class ImprovementTests
             }
 
             using var restoredDb = new Database(restoredPath);
-            var restoredColumns = new List<ColumnDefinition>
-            {
-                new("Id", DataType.Int, false),
-                new("Name", DataType.String)
-            };
-            var restoredTable = restoredDb.CreateTable("BackupUsers", restoredColumns, "Id");
+            var restoredTable = restoredDb.GetTable("BackupUsers");
             var restoredRow = restoredTable.SelectByKey(7);
             Assert.NotNull(restoredRow);
             Assert.Equal("Recovered", restoredRow["Name"]);
@@ -413,8 +408,8 @@ public class ImprovementTests
                 writer.Write(0); // Corrupt magic number
             }
 
-            using var db = new Database(testDbPath);
-            var report = db.CheckIntegrity();
+            using var reopenedDb = new Database(testDbPath);
+            var report = reopenedDb.CheckIntegrity();
             Assert.False(report.IsHealthy);
             Assert.Contains(report.Issues, issue => issue.Contains("magic number", StringComparison.OrdinalIgnoreCase));
         }
