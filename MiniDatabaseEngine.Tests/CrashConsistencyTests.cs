@@ -33,7 +33,10 @@ public class CrashConsistencyTests
             }
 
             using var restarted = new Database(snapshotPath);
-            Assert.False(restarted.TableExists("Users"));
+            Assert.True(restarted.TableExists("Users"));
+            var users = restarted.GetTable("Users");
+            var alice = users.SelectByKey(1);
+            Assert.Null(alice);
         }
         finally
         {
