@@ -134,6 +134,63 @@ public class DatabaseTests : IDisposable
         var results = _database.Query("Users").ToList();
         Assert.Equal(5, results.Count);
     }
+
+    [Fact]
+    public void Query_With_PrimaryKey_Equality_Filter_Returns_Single_Row()
+    {
+        var columns = new List<ColumnDefinition>
+        {
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String),
+            new("Age", DataType.Int)
+        };
+
+        var table = _database.CreateTable("UsersById", columns, "Id");
+        for (int i = 1; i <= 10; i++)
+        {
+            var row = new DataRow(table.Schema);
+            row["Id"] = i;
+            row["Name"] = $"User{i}";
+            row["Age"] = 20 + i;
+            _database.Insert("UsersById", row);
+        }
+
+        var result = _database.Query("UsersById")
+            .Where(r => (int)r["Id"]! == 7)
+            .ToList();
+
+        Assert.Single(result);
+        Assert.Equal(7, result[0]["Id"]);
+    }
+
+    [Fact]
+    public void Query_With_PrimaryKey_Range_Filter_And_Additional_Predicate_Returns_Matching_Rows()
+    {
+        var columns = new List<ColumnDefinition>
+        {
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String),
+            new("Age", DataType.Int)
+        };
+
+        var table = _database.CreateTable("UsersRange", columns, "Id");
+        for (int i = 1; i <= 20; i++)
+        {
+            var row = new DataRow(table.Schema);
+            row["Id"] = i;
+            row["Name"] = $"User{i}";
+            row["Age"] = 20 + i;
+            _database.Insert("UsersRange", row);
+        }
+
+        var results = _database.Query("UsersRange")
+            .Where(r => (int)r["Id"]! >= 5 && (int)r["Id"]! < 12)
+            .Where(r => (int)r["Age"]! % 2 == 0)
+            .OrderByDescending(r => (int)r["Id"]!)
+            .ToList();
+
+        Assert.Equal(new[] { 10, 8, 6 }, results.Select(r => (int)r["Id"]!).ToArray());
+    }
     
     [Fact]
     public void Supports_All_Data_Types()

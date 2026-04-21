@@ -260,6 +260,28 @@ public class Table
             _lock.ExitReadLock();
         }
     }
+
+    /// <summary>
+    /// Select rows by primary-key range (inclusive bounds).
+    /// </summary>
+    public IEnumerable<DataRow> SelectByPrimaryKeyRange(object? minKey, object? maxKey)
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            var results = new List<DataRow>();
+            foreach (var kvp in _index.Range(minKey, maxKey))
+            {
+                results.Add(DeserializeRow((byte[])kvp.Value!));
+            }
+
+            return results;
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
     
     private object GetPrimaryKey(DataRow row)
     {
