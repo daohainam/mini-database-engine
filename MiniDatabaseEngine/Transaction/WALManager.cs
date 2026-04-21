@@ -22,6 +22,7 @@ public class WALManager : IDisposable
 {
     // Maximum size per WAL entry to prevent excessive memory allocation (1MB)
     private const int MaxWALEntrySize = 1024 * 1024;
+    private const uint ChecksumMarker = 0xC0DEC0DE;
     
     private readonly string _walFilePath;
     private readonly FileStream _walStream;
@@ -61,11 +62,14 @@ public class WALManager : IDisposable
         {
             entry.SequenceNumber = ++_sequenceNumber;
             var serialized = entry.Serialize();
+            var checksum = ComputeChecksum(serialized);
 
-            // Write entry length followed by entry data
+            // Write entry length, marker, checksum, and entry data
             _walStream.Seek(0, SeekOrigin.End);
             using var writer = new BinaryWriter(_walStream, System.Text.Encoding.UTF8, leaveOpen: true);
             writer.Write(serialized.Length);
+            writer.Write(ChecksumMarker);
+            writer.Write(checksum);
             writer.Write(serialized);
             writer.Flush();
         }
@@ -113,7 +117,41 @@ public class WALManager : IDisposable
                     break;
                 }
                 
-                byte[] data = reader.ReadBytes(length);
+                byte[] data;
+                var entryPayloadPosition = _walStream.Position;
+                var remainingBytes = _walStream.Length - entryPayloadPosition;
+                if (remainingBytes >= sizeof(uint) * 2 + length)
+                {
+                    var marker = reader.ReadUInt32();
+                    if (marker == ChecksumMarker)
+                    {
+                        var storedChecksum = reader.ReadUInt32();
+                        data = reader.ReadBytes(length);
+                        if (data.Length != length)
+                        {
+                            // Incomplete entry - stop reading
+                            break;
+                        }
+
+                        var computedChecksum = ComputeChecksum(data);
+                        if (storedChecksum != computedChecksum)
+                        {
+                            // Corrupted entry payload - stop at last valid entry
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        // Backward compatibility for entries written without checksum metadata.
+                        _walStream.Position = entryPayloadPosition;
+                        data = reader.ReadBytes(length);
+                    }
+                }
+                else
+                {
+                    data = reader.ReadBytes(length);
+                }
+
                 if (data.Length != length)
                 {
                     // Incomplete entry - stop reading
@@ -187,9 +225,12 @@ public class WALManager : IDisposable
             };
 
             var serialized = entry.Serialize();
+            var checksum = ComputeChecksum(serialized);
             _walStream.Seek(0, SeekOrigin.End);
             using var writer = new BinaryWriter(_walStream, System.Text.Encoding.UTF8, leaveOpen: true);
             writer.Write(serialized.Length);
+            writer.Write(ChecksumMarker);
+            writer.Write(checksum);
             writer.Write(serialized);
             writer.Flush();
         }
@@ -235,7 +276,10 @@ public class WALManager : IDisposable
             foreach (var entry in entriesToKeep)
             {
                 var serialized = entry.Serialize();
+                var checksum = ComputeChecksum(serialized);
                 writer.Write(serialized.Length);
+                writer.Write(ChecksumMarker);
+                writer.Write(checksum);
                 writer.Write(serialized);
             }
 
@@ -374,6 +418,24 @@ public class WALManager : IDisposable
                     break;
                 }
 
+                var entryPayloadPosition = _walStream.Position;
+                var remainingBytes = _walStream.Length - entryPayloadPosition;
+                bool hasChecksumHeader = false;
+                uint storedChecksum = 0;
+                if (remainingBytes >= sizeof(uint) * 2 + length)
+                {
+                    var marker = reader.ReadUInt32();
+                    if (marker == ChecksumMarker)
+                    {
+                        hasChecksumHeader = true;
+                        storedChecksum = reader.ReadUInt32();
+                    }
+                    else
+                    {
+                        _walStream.Position = entryPayloadPosition;
+                    }
+                }
+
                 if (_walStream.Length - _walStream.Position < length)
                 {
                     issues.Add($"WAL entry at byte {entryStart} is truncated.");
@@ -385,6 +447,16 @@ public class WALManager : IDisposable
                 {
                     issues.Add($"WAL entry at byte {entryStart} payload could not be read fully.");
                     break;
+                }
+
+                if (hasChecksumHeader)
+                {
+                    var computedChecksum = ComputeChecksum(payload);
+                    if (storedChecksum != computedChecksum)
+                    {
+                        issues.Add($"WAL entry at byte {entryStart} failed checksum verification.");
+                        break;
+                    }
                 }
 
                 WALEntry entry;
@@ -440,6 +512,21 @@ public class WALManager : IDisposable
         {
             _checkpointSequence = lastCheckpoint.SequenceNumber;
         }
+    }
+
+    private static uint ComputeChecksum(ReadOnlySpan<byte> data)
+    {
+        const uint offsetBasis = 2166136261; // FNV-1a 32-bit offset basis
+        const uint prime = 16777619; // FNV-1a 32-bit prime
+        uint hash = offsetBasis;
+
+        foreach (var value in data)
+        {
+            hash ^= value;
+            hash *= prime;
+        }
+
+        return hash;
     }
 
     public void Dispose()

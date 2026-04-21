@@ -41,6 +41,10 @@ public class Database : IDisposable
     private const int CatalogPageMagic = 0x43415450; // CATP
     private const int CatalogPageHeaderSize = 12; // Magic(4) + NextPageId(4) + PayloadLength(4)
     private const int MaxCatalogEntrySize = 16 * 1024 * 1024; // 16 MB safety cap
+    private const int MaxCatalogLength = 256 * 1024 * 1024; // 256 MB safety cap
+    private const int MaxCatalogTableCount = 100_000;
+    private const int MaxSchemaColumnCount = 4_096;
+    private const int MaxCatalogStringByteLength = 64 * 1024;
 
     private readonly StorageEngine _storage;
     private readonly string _databaseFilePath;
@@ -344,12 +348,14 @@ public class Database : IDisposable
             throw new ArgumentException("Backup directory is required.", nameof(backupDirectory));
 
         Flush();
-        Directory.CreateDirectory(backupDirectory);
+        var backupRootPath = Path.GetFullPath(backupDirectory);
+        Directory.CreateDirectory(backupRootPath);
 
         var namePrefix = string.IsNullOrWhiteSpace(backupName)
             ? $"backup-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfffffff}-{Guid.NewGuid():N}"
-            : backupName.Trim();
-        var backupPath = Path.Combine(backupDirectory, namePrefix);
+            : ValidateBackupName(backupName);
+        var backupPath = Path.GetFullPath(Path.Combine(backupRootPath, namePrefix));
+        EnsurePathWithinDirectory(backupPath, backupRootPath, nameof(backupName));
         Directory.CreateDirectory(backupPath);
 
         var dbTargetPath = Path.Combine(backupPath, Path.GetFileName(_databaseFilePath));
@@ -597,6 +603,9 @@ public class Database : IDisposable
 
     private byte[] ReadCatalogBytes(int rootPageId, int catalogLength)
     {
+        if (catalogLength < 0 || catalogLength > MaxCatalogLength)
+            throw new InvalidDataException($"Invalid catalog length: {catalogLength}");
+
         var result = new byte[catalogLength];
         int copied = 0;
         int currentPageId = rootPageId;
@@ -671,7 +680,7 @@ public class Database : IDisposable
             throw new InvalidDataException($"Unsupported catalog format version: {version}");
 
         int tableCount = reader.ReadInt32();
-        if (tableCount < 0)
+        if (tableCount < 0 || tableCount > MaxCatalogTableCount)
             throw new InvalidDataException("Invalid table count in catalog");
 
         for (int t = 0; t < tableCount; t++)
@@ -720,17 +729,17 @@ public class Database : IDisposable
 
     private static TableSchema ReadSchema(BinaryReader reader)
     {
-        var tableName = reader.ReadString();
-        var primaryKeyColumn = reader.ReadString();
+        var tableName = ReadBoundedString(reader, MaxCatalogStringByteLength, "table name");
+        var primaryKeyColumn = ReadBoundedString(reader, MaxCatalogStringByteLength, "primary key column");
         int columnCount = reader.ReadInt32();
-        if (columnCount <= 0)
+        if (columnCount <= 0 || columnCount > MaxSchemaColumnCount)
             throw new InvalidDataException($"Table '{tableName}' has invalid column count");
 
         var columns = new List<ColumnDefinition>(columnCount);
         for (int i = 0; i < columnCount; i++)
         {
-            var name = reader.ReadString();
-            var dataType = (DataType)reader.ReadInt32();
+            var name = ReadBoundedString(reader, MaxCatalogStringByteLength, "column name");
+            var dataType = ReadDataType(reader);
             var isNullable = reader.ReadBoolean();
             var maxLength = reader.ReadInt32();
             columns.Add(new ColumnDefinition(name, dataType, isNullable, maxLength));
@@ -815,7 +824,7 @@ public class Database : IDisposable
         {
             0 => reader.ReadInt32(),
             1 => reader.ReadInt64(),
-            2 => reader.ReadString(),
+            2 => ReadBoundedString(reader, MaxCatalogStringByteLength, "catalog key string"),
             3 => reader.ReadDouble(),
             4 => reader.ReadSingle(),
             5 => reader.ReadBoolean(),
@@ -850,6 +859,46 @@ public class Database : IDisposable
     {
         if (_metricsEnabled)
             updateAction(_metrics);
+    }
+
+    private static DataType ReadDataType(BinaryReader reader)
+    {
+        var value = reader.ReadInt32();
+        if (!Enum.IsDefined(typeof(DataType), value))
+            throw new InvalidDataException($"Invalid data type value: {value}");
+        return (DataType)value;
+    }
+
+    private static string ValidateBackupName(string backupName)
+    {
+        var trimmed = backupName.Trim();
+        if (trimmed.Length == 0)
+            throw new ArgumentException("Backup name cannot be empty.", nameof(backupName));
+
+        if (trimmed.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            throw new ArgumentException("Backup name contains invalid characters.", nameof(backupName));
+
+        if (trimmed.Contains(Path.DirectorySeparatorChar) || trimmed.Contains(Path.AltDirectorySeparatorChar))
+            throw new ArgumentException("Backup name cannot contain path separator characters.", nameof(backupName));
+
+        return trimmed;
+    }
+
+    private static void EnsurePathWithinDirectory(string candidatePath, string rootPath, string parameterName)
+    {
+        var relativePath = Path.GetRelativePath(rootPath, candidatePath);
+        if (relativePath == ".."
+            || relativePath.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            || relativePath.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal)
+            || Path.IsPathRooted(relativePath))
+        {
+            throw new ArgumentException("Resolved path escapes the configured backup directory.", parameterName);
+        }
+    }
+
+    private static string ReadBoundedString(BinaryReader reader, int maxByteLength, string fieldName)
+    {
+        return BinaryDecodingGuards.ReadBoundedString(reader, maxByteLength, fieldName);
     }
 
     private void Log(DatabaseLogLevel level, string eventName, string message, IReadOnlyDictionary<string, object?>? properties = null)
