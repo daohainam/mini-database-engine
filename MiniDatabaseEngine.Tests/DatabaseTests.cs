@@ -195,6 +195,86 @@ public class DatabaseTests : IDisposable
         Assert.Equal(1234567890.123456789m, result["DecimalVal"]);
         Assert.Equal(new DateTime(2023, 12, 25, 10, 30, 0), result["DateTimeVal"]);
     }
+
+    [Fact]
+    public void Reopen_Loads_Persisted_Table_And_Data_Without_Recreating_Table()
+    {
+        var localDbPath = Path.Combine(Path.GetTempPath(), $"test_persist_{Guid.NewGuid()}.mde");
+        var columns = new List<ColumnDefinition>
+        {
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String, isNullable: false, maxLength: 100)
+        };
+
+        try
+        {
+            using (var db = new Database(localDbPath))
+            {
+                var users = db.CreateTable("UsersPersisted", columns, "Id");
+                var row = new DataRow(users.Schema);
+                row["Id"] = 10;
+                row["Name"] = "Persisted User";
+                db.Insert("UsersPersisted", row);
+                db.Flush();
+            }
+
+            using var reopened = new Database(localDbPath);
+            Assert.True(reopened.TableExists("UsersPersisted"));
+
+            var loadedTable = reopened.GetTable("UsersPersisted");
+            Assert.Equal("Id", loadedTable.Schema.PrimaryKeyColumn);
+            Assert.False(loadedTable.Schema.Columns[1].IsNullable);
+            Assert.Equal(100, loadedTable.Schema.Columns[1].MaxLength);
+
+            var loadedRow = loadedTable.SelectByKey(10);
+            Assert.NotNull(loadedRow);
+            Assert.Equal("Persisted User", loadedRow!["Name"]);
+        }
+        finally
+        {
+            if (File.Exists(localDbPath))
+                File.Delete(localDbPath);
+
+            var localWalPath = Path.ChangeExtension(localDbPath, ".wal");
+            if (File.Exists(localWalPath))
+                File.Delete(localWalPath);
+        }
+    }
+
+    [Fact]
+    public void CreateTable_With_Same_Schema_Is_Idempotent_After_Startup_Load()
+    {
+        var localDbPath = Path.Combine(Path.GetTempPath(), $"test_idempotent_{Guid.NewGuid()}.mde");
+        var columns = new List<ColumnDefinition>
+        {
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String)
+        };
+
+        try
+        {
+            using (var db = new Database(localDbPath))
+            {
+                db.CreateTable("IdempotentUsers", columns, "Id");
+                db.Flush();
+            }
+
+            using var reopened = new Database(localDbPath);
+            var first = reopened.GetTable("IdempotentUsers");
+            var second = reopened.CreateTable("IdempotentUsers", columns, "Id");
+
+            Assert.Same(first, second);
+        }
+        finally
+        {
+            if (File.Exists(localDbPath))
+                File.Delete(localDbPath);
+
+            var localWalPath = Path.ChangeExtension(localDbPath, ".wal");
+            if (File.Exists(localWalPath))
+                File.Delete(localWalPath);
+        }
+    }
     
     public void Dispose()
     {
@@ -202,6 +282,12 @@ public class DatabaseTests : IDisposable
         if (File.Exists(_testDbPath))
         {
             File.Delete(_testDbPath);
+        }
+
+        var walPath = Path.ChangeExtension(_testDbPath, ".wal");
+        if (File.Exists(walPath))
+        {
+            File.Delete(walPath);
         }
     }
 }
