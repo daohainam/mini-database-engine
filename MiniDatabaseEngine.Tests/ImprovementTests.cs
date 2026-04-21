@@ -1,5 +1,6 @@
 using Xunit;
 using MiniDatabaseEngine.Storage;
+using MiniDatabaseEngine.Transaction;
 using System.Collections.Concurrent;
 
 namespace MiniDatabaseEngine.Tests;
@@ -389,6 +390,100 @@ public class ImprovementTests
             if (File.Exists(Path.ChangeExtension(restoredPath, ".wal")))
                 File.Delete(Path.ChangeExtension(restoredPath, ".wal"));
         }
+    }
+
+    [Fact]
+    public void Database_CreateBackup_Rejects_Path_Traversal_Name()
+    {
+        var testDbPath = Path.Combine(Path.GetTempPath(), $"test_backup_name_{Guid.NewGuid()}.mde");
+        var backupRoot = Path.Combine(Path.GetTempPath(), $"mde_backup_{Guid.NewGuid()}");
+        try
+        {
+            using var db = new Database(testDbPath);
+            Assert.Throws<ArgumentException>(() => db.CreateBackup(backupRoot, "../escape"));
+        }
+        finally
+        {
+            if (Directory.Exists(backupRoot))
+                Directory.Delete(backupRoot, recursive: true);
+
+            if (File.Exists(testDbPath))
+                File.Delete(testDbPath);
+
+            var walPath = Path.ChangeExtension(testDbPath, ".wal");
+            if (File.Exists(walPath))
+                File.Delete(walPath);
+        }
+    }
+
+    [Fact]
+    public void Database_Integrity_Check_Detects_Corrupted_WAL_Checksum()
+    {
+        var testDbPath = Path.Combine(Path.GetTempPath(), $"test_wal_checksum_{Guid.NewGuid()}.mde");
+        var walPath = Path.ChangeExtension(testDbPath, ".wal");
+        try
+        {
+            using (var db = new Database(testDbPath))
+            {
+                var columns = new List<ColumnDefinition>
+                {
+                    new("Id", DataType.Int, false),
+                    new("Name", DataType.String)
+                };
+
+                var table = db.CreateTable("ChecksumUsers", columns, "Id");
+                using var txn = db.BeginTransaction();
+                var row = new DataRow(table.Schema);
+                row["Id"] = 1;
+                row["Name"] = "Alice";
+                db.Insert("ChecksumUsers", row, txn);
+                txn.Commit();
+            }
+
+            using (var fs = new FileStream(walPath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+            {
+                Assert.True(fs.Length > 0);
+                fs.Seek(-1, SeekOrigin.End);
+                var lastByte = fs.ReadByte();
+                Assert.NotEqual(-1, lastByte);
+                fs.Seek(-1, SeekOrigin.End);
+                fs.WriteByte((byte)(lastByte ^ 0xFF));
+            }
+
+            using var reopened = new Database(testDbPath);
+            var report = reopened.CheckIntegrity();
+            Assert.False(report.IsHealthy);
+            Assert.Contains(report.Issues, issue => issue.Contains("checksum", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            if (File.Exists(testDbPath))
+                File.Delete(testDbPath);
+
+            if (File.Exists(walPath))
+                File.Delete(walPath);
+        }
+    }
+
+    [Fact]
+    public void WALEntry_Deserialize_Rejects_Invalid_Operation_Type()
+    {
+        using var ms = new MemoryStream();
+        using (var writer = new BinaryWriter(ms, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(1L); // TransactionId
+            writer.Write(int.MaxValue); // Invalid operation type
+            writer.Write("Users");
+            writer.Write(false); // Key
+            writer.Write(false); // OldValue
+            writer.Write(false); // NewValue
+            writer.Write(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            writer.Write(1L); // SequenceNumber
+            writer.Write(0); // CheckpointActiveTransactionIds count
+            writer.Write(0L); // CheckpointNextTransactionId
+        }
+
+        Assert.Throws<InvalidDataException>(() => WALEntry.Deserialize(ms.ToArray()));
     }
 
     [Fact]

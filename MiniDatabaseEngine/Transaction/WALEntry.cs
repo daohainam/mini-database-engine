@@ -20,6 +20,8 @@ public enum WALOperationType
 public class WALEntry
 {
     private const int MaxCheckpointActiveTransactionCount = 100_000;
+    private const int MaxStringByteLength = 64 * 1024;
+    private const int MaxValueLength = 1024 * 1024;
 
     public long TransactionId { get; set; }
     public WALOperationType OperationType { get; set; }
@@ -107,8 +109,8 @@ public class WALEntry
         var entry = new WALEntry
         {
             TransactionId = reader.ReadInt64(),
-            OperationType = (WALOperationType)reader.ReadInt32(),
-            TableName = reader.ReadString()
+            OperationType = ReadOperationType(reader),
+            TableName = ReadBoundedString(reader, MaxStringByteLength, "table name")
         };
 
         // Read key
@@ -121,14 +123,22 @@ public class WALEntry
         if (reader.ReadBoolean())
         {
             int oldValueLength = reader.ReadInt32();
+            if (oldValueLength < 0 || oldValueLength > MaxValueLength)
+                throw new InvalidDataException($"Invalid old value length: {oldValueLength}");
             entry.OldValue = reader.ReadBytes(oldValueLength);
+            if (entry.OldValue.Length != oldValueLength)
+                throw new EndOfStreamException("Incomplete WAL old value payload.");
         }
 
         // Read NewValue
         if (reader.ReadBoolean())
         {
             int newValueLength = reader.ReadInt32();
+            if (newValueLength < 0 || newValueLength > MaxValueLength)
+                throw new InvalidDataException($"Invalid new value length: {newValueLength}");
             entry.NewValue = reader.ReadBytes(newValueLength);
+            if (entry.NewValue.Length != newValueLength)
+                throw new EndOfStreamException("Incomplete WAL new value payload.");
         }
 
         entry.Timestamp = reader.ReadInt64();
@@ -233,7 +243,7 @@ public class WALEntry
         {
             0 => reader.ReadInt32(),
             1 => reader.ReadInt64(),
-            2 => reader.ReadString(),
+            2 => ReadBoundedString(reader, MaxStringByteLength, "key string"),
             3 => reader.ReadDouble(),
             4 => reader.ReadSingle(),
             5 => reader.ReadBoolean(),
@@ -248,5 +258,49 @@ public class WALEntry
             14 => DateTime.FromBinary(reader.ReadInt64()),
             _ => throw new NotSupportedException($"Type code {typeCode} not supported")
         };
+    }
+
+    private static WALOperationType ReadOperationType(BinaryReader reader)
+    {
+        var operationTypeValue = reader.ReadInt32();
+        if (!Enum.IsDefined(typeof(WALOperationType), operationTypeValue))
+            throw new InvalidDataException($"Invalid WAL operation type: {operationTypeValue}");
+
+        return (WALOperationType)operationTypeValue;
+    }
+
+    private static string ReadBoundedString(BinaryReader reader, int maxByteLength, string fieldName)
+    {
+        int byteLength = Read7BitEncodedInt(reader);
+        if (byteLength < 0 || byteLength > maxByteLength)
+            throw new InvalidDataException($"Invalid {fieldName} length: {byteLength}");
+
+        var bytes = reader.ReadBytes(byteLength);
+        if (bytes.Length != byteLength)
+            throw new EndOfStreamException($"Incomplete {fieldName} payload.");
+
+        return System.Text.Encoding.UTF8.GetString(bytes);
+    }
+
+    private static int Read7BitEncodedInt(BinaryReader reader)
+    {
+        uint result = 0;
+        int shift = 0;
+
+        while (shift < 35)
+        {
+            byte b = reader.ReadByte();
+            result |= (uint)(b & 0x7F) << shift;
+            if ((b & 0x80) == 0)
+            {
+                if (result > int.MaxValue)
+                    throw new InvalidDataException("7-bit encoded value exceeds Int32 range.");
+                return (int)result;
+            }
+
+            shift += 7;
+        }
+
+        throw new InvalidDataException("Invalid 7-bit encoded integer.");
     }
 }
