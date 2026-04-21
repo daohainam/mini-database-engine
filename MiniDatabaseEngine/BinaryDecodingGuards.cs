@@ -25,6 +25,7 @@ internal static class BinaryDecodingGuards
         while (shift < 32)
         {
             byte b = reader.ReadByte();
+            // At shift 28 (the 5th byte), only the low 4 bits may be set for a valid Int32 payload.
             if (shift == 28 && (b & 0xF0) != 0)
                 throw new InvalidDataException("7-bit encoded value exceeds Int32 range.");
 

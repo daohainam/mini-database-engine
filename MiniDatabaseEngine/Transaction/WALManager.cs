@@ -516,8 +516,8 @@ public class WALManager : IDisposable
 
     private static uint ComputeChecksum(ReadOnlySpan<byte> data)
     {
-        const uint offsetBasis = 2166136261;
-        const uint prime = 16777619;
+        const uint offsetBasis = 2166136261; // FNV-1a 32-bit offset basis
+        const uint prime = 16777619; // FNV-1a 32-bit prime
         uint hash = offsetBasis;
 
         foreach (var value in data)
