@@ -22,14 +22,18 @@ public class Transaction : IDisposable
     private TransactionState _state;
     private readonly ReaderWriterLockSlim _lock;
     private readonly List<WALEntry> _entries;
-    private readonly Action<WALEntry> _undoCallback;
+    private readonly Action<IReadOnlyList<WALEntry>> _commitApplyCallback;
 
-    internal Transaction(long transactionId, WALManager walManager, TransactionManager transactionManager, Action<WALEntry> undoCallback)
+    internal Transaction(
+        long transactionId,
+        WALManager walManager,
+        TransactionManager transactionManager,
+        Action<IReadOnlyList<WALEntry>> commitApplyCallback)
     {
         _transactionId = transactionId;
         _walManager = walManager;
         _transactionManager = transactionManager;
-        _undoCallback = undoCallback;
+        _commitApplyCallback = commitApplyCallback;
         _state = TransactionState.Active;
         _lock = new ReaderWriterLockSlim();
         _entries = new List<WALEntry>();
@@ -66,6 +70,9 @@ public class Transaction : IDisposable
             // Force flush to ensure durability
             _walManager.Flush();
 
+            // Apply buffered writes only after WAL commit is durable.
+            _commitApplyCallback(_entries);
+
             _state = TransactionState.Committed;
             _transactionManager.CompleteTransaction(_transactionId);
         }
@@ -85,14 +92,6 @@ public class Transaction : IDisposable
         {
             if (_state != TransactionState.Active)
                 throw new InvalidOperationException($"Cannot rollback transaction in state: {_state}");
-
-            // Undo operations in reverse order
-            for (int i = _entries.Count - 1; i >= 0; i--)
-            {
-                var entry = _entries[i];
-                var undoEntry = CreateUndoEntry(entry);
-                _undoCallback(undoEntry);
-            }
 
             // Log the rollback
             _walManager.AppendEntry(new WALEntry
@@ -165,41 +164,6 @@ public class Transaction : IDisposable
         };
         _entries.Add(entry);
         _walManager.AppendEntry(entry);
-    }
-
-    private WALEntry CreateUndoEntry(WALEntry entry)
-    {
-        var undoEntry = new WALEntry
-        {
-            TransactionId = entry.TransactionId,
-            TableName = entry.TableName,
-            Key = entry.Key,
-            SequenceNumber = entry.SequenceNumber
-        };
-
-        switch (entry.OperationType)
-        {
-            case WALOperationType.Insert:
-                // Undo insert by deleting
-                undoEntry.OperationType = WALOperationType.Delete;
-                undoEntry.OldValue = entry.NewValue;
-                break;
-
-            case WALOperationType.Update:
-                // Undo update by restoring old value
-                undoEntry.OperationType = WALOperationType.Update;
-                undoEntry.NewValue = entry.OldValue;
-                undoEntry.OldValue = entry.NewValue;
-                break;
-
-            case WALOperationType.Delete:
-                // Undo delete by inserting old value
-                undoEntry.OperationType = WALOperationType.Insert;
-                undoEntry.NewValue = entry.OldValue;
-                break;
-        }
-
-        return undoEntry;
     }
 
     private void EnsureActive()

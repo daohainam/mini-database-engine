@@ -24,6 +24,33 @@ public class TransactionTests : IDisposable
     }
 
     [Fact]
+    public void Uncommitted_Changes_Are_Not_Visible_Outside_Transaction()
+    {
+        var columns = new List<ColumnDefinition>
+        {
+            new("Id", DataType.Int, false),
+            new("Name", DataType.String)
+        };
+
+        var table = _database.CreateTable("Users", columns, "Id");
+
+        using var txn = _database.BeginTransaction();
+        var row = new DataRow(table.Schema);
+        row["Id"] = 1;
+        row["Name"] = "Alice";
+        _database.Insert("Users", row, txn);
+
+        var beforeCommit = table.SelectByKey(1);
+        Assert.Null(beforeCommit);
+
+        txn.Commit();
+
+        var afterCommit = table.SelectByKey(1);
+        Assert.NotNull(afterCommit);
+        Assert.Equal("Alice", afterCommit["Name"]);
+    }
+
+    [Fact]
     public void Transaction_Commit_Makes_Changes_Permanent()
     {
         var columns = new List<ColumnDefinition>

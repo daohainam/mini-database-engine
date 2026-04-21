@@ -63,6 +63,10 @@ public class Table
             if (transaction != null)
             {
                 transaction.LogInsert(_schema.TableName, key, serialized);
+                // Reserve this generated slot up front to keep key allocation monotonic.
+                // Rollbacks may leave gaps, which is acceptable for generated keys.
+                _nextRowId++;
+                return;
             }
             
             // Store in B+ Tree
@@ -77,6 +81,8 @@ public class Table
     
     /// <summary>
     /// Update a row by primary key
+    /// Returns true when the target row exists and the update is accepted.
+    /// For transactional calls, accepted updates are buffered and applied on commit.
     /// </summary>
     public bool Update(object key, DataRow row, Transaction.Transaction? transaction = null)
     {
@@ -94,6 +100,7 @@ public class Table
             if (transaction != null)
             {
                 transaction.LogUpdate(_schema.TableName, key, oldValue, serialized);
+                return true;
             }
             
             _index.Insert(key, serialized);
@@ -107,6 +114,8 @@ public class Table
     
     /// <summary>
     /// Delete a row by primary key
+    /// Returns true when the target row exists and the delete is accepted.
+    /// For transactional calls, accepted deletes are buffered and applied on commit.
     /// </summary>
     public bool Delete(object key, Transaction.Transaction? transaction = null)
     {
@@ -123,6 +132,7 @@ public class Table
             if (transaction != null)
             {
                 transaction.LogDelete(_schema.TableName, key, oldValue);
+                return true;
             }
             
             return _index.Delete(key);
