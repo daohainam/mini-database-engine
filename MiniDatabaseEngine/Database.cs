@@ -2,6 +2,7 @@ using MiniDatabaseEngine.Linq;
 using MiniDatabaseEngine.Storage;
 using MiniDatabaseEngine.Transaction;
 using System.Collections.Concurrent;
+using System.Text;
 
 namespace MiniDatabaseEngine;
 
