@@ -414,6 +414,83 @@ public class RecoveryTests : IDisposable
         }
     }
 
+    [Fact]
+    public void Recovery_Handles_Transaction_Spanning_Checkpoint()
+    {
+        using (var db = new Database(_testDbPath))
+        {
+            var columns = new List<ColumnDefinition>
+            {
+                new("Id", DataType.Int, false),
+                new("Name", DataType.String)
+            };
+
+            var table = db.CreateTable("Users", columns, "Id");
+
+            using (var txn = db.BeginTransaction())
+            {
+                var row = new DataRow(table.Schema);
+                row["Id"] = 1;
+                row["Name"] = "Alice";
+                db.Insert("Users", row, txn);
+
+                // Transaction is still active when checkpoint happens.
+                db.Checkpoint();
+
+                // Commit after checkpoint.
+                txn.Commit();
+            }
+
+            db.Flush();
+        }
+
+        using (var db = new Database(_testDbPath))
+        {
+            var columns = new List<ColumnDefinition>
+            {
+                new("Id", DataType.Int, false),
+                new("Name", DataType.String)
+            };
+
+            var table = db.CreateTable("Users", columns, "Id");
+            var alice = table.SelectByKey(1);
+            Assert.NotNull(alice);
+            Assert.Equal("Alice", alice["Name"]);
+        }
+    }
+
+    [Fact]
+    public void Recovery_Maintains_Next_Transaction_Id_After_Checkpoint_Truncation()
+    {
+        using (var db = new Database(_testDbPath))
+        {
+            var columns = new List<ColumnDefinition>
+            {
+                new("Id", DataType.Int, false),
+                new("Name", DataType.String)
+            };
+
+            var table = db.CreateTable("Users", columns, "Id");
+            using (var txn = db.BeginTransaction())
+            {
+                var row = new DataRow(table.Schema);
+                row["Id"] = 1;
+                row["Name"] = "Alice";
+                db.Insert("Users", row, txn);
+                txn.Commit();
+            }
+
+            db.Checkpoint();
+            db.Flush();
+        }
+
+        using (var db = new Database(_testDbPath))
+        {
+            using var txn = db.BeginTransaction();
+            Assert.True(txn.TransactionId >= 2);
+        }
+    }
+
     public void Dispose()
     {
         // Clean up test files
