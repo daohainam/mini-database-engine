@@ -166,6 +166,29 @@ public class Transaction : IDisposable
         _walManager.AppendEntry(entry);
     }
 
+    internal bool HasBufferedValueForKey(string tableName, object key)
+    {
+        for (int i = _entries.Count - 1; i >= 0; i--)
+        {
+            var entry = _entries[i];
+            if (!string.Equals(entry.TableName, tableName, StringComparison.Ordinal))
+                continue;
+
+            if (!Equals(entry.Key, key))
+                continue;
+
+            return entry.OperationType switch
+            {
+                WALOperationType.Insert => true,
+                WALOperationType.Update => true,
+                WALOperationType.Delete => false,
+                _ => false
+            };
+        }
+
+        return false;
+    }
+
     private void EnsureActive()
     {
         if (_state != TransactionState.Active)

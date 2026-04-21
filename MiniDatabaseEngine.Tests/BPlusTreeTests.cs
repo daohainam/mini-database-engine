@@ -87,4 +87,52 @@ public class BPlusTreeTests
         Assert.Equal(5, range[0].Key);
         Assert.Equal(10, range[5].Key);
     }
+
+    [Fact]
+    public void Delete_Many_Keys_Rebalances_And_Preserves_Invariants()
+    {
+        var tree = new BPlusTree.BPlusTree(4, DataType.Int);
+        for (int i = 1; i <= 100; i++)
+        {
+            tree.Insert(i, $"Value{i}");
+        }
+
+        for (int i = 2; i <= 100; i += 2)
+        {
+            Assert.True(tree.Delete(i));
+            tree.ValidateInvariants();
+        }
+
+        for (int i = 1; i <= 100; i++)
+        {
+            var value = tree.Search(i);
+            if (i % 2 == 0)
+            {
+                Assert.Null(value);
+            }
+            else
+            {
+                Assert.Equal($"Value{i}", value);
+            }
+        }
+    }
+
+    [Fact]
+    public void Delete_All_Keys_Collapses_Back_To_Leaf_Root()
+    {
+        var tree = new BPlusTree.BPlusTree(4, DataType.Int);
+        for (int i = 1; i <= 40; i++)
+        {
+            tree.Insert(i, $"Value{i}");
+        }
+
+        for (int i = 1; i <= 40; i++)
+        {
+            Assert.True(tree.Delete(i));
+            tree.ValidateInvariants();
+        }
+
+        Assert.True(tree.Root.IsLeaf);
+        Assert.Empty(tree.GetAll());
+    }
 }

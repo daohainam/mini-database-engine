@@ -55,6 +55,12 @@ public class Table
         try
         {
             var key = GetPrimaryKey(row);
+            ValidateRowForWrite(row);
+
+            var keyExists = _index.Search(key) != null;
+            var keyPendingInTransaction = transaction?.HasBufferedValueForKey(_schema.TableName, key) ?? false;
+            if (keyExists || keyPendingInTransaction)
+                throw new InvalidOperationException($"Duplicate primary key value '{key}' for table '{_schema.TableName}'.");
             
             // Serialize row data
             var serialized = SerializeRow(row);
@@ -92,6 +98,8 @@ public class Table
             var existing = _index.Search(key);
             if (existing == null)
                 return false;
+
+            ValidateRowForWrite(row, key);
             
             var oldValue = (byte[])existing;
             var serialized = SerializeRow(row);
@@ -281,6 +289,75 @@ public class Table
         }
         
         return ms.ToArray();
+    }
+
+    private void ValidateRowForWrite(DataRow row, object? expectedPrimaryKey = null)
+    {
+        var values = row.GetValues();
+        if (values.Length != _schema.Columns.Count)
+            throw new InvalidOperationException($"Row value count mismatch for table '{_schema.TableName}'.");
+
+        for (int i = 0; i < _schema.Columns.Count; i++)
+        {
+            var column = _schema.Columns[i];
+            var value = values[i];
+
+            if (value == null)
+            {
+                if (!column.IsNullable)
+                    throw new InvalidOperationException($"Column '{column.Name}' does not allow null values.");
+                continue;
+            }
+
+            if (!IsValueCompatibleWithColumnType(value, column.DataType))
+            {
+                throw new InvalidCastException(
+                    $"Column '{column.Name}' expects {column.DataType}, but received '{value.GetType().Name}'.");
+            }
+
+            if (column.DataType == DataType.String)
+            {
+                var text = (string)value;
+                if (text.Length > column.MaxLength)
+                {
+                    throw new InvalidOperationException(
+                        $"Column '{column.Name}' max length is {column.MaxLength}, but value length is {text.Length}.");
+                }
+            }
+        }
+
+        if (!string.IsNullOrEmpty(_schema.PrimaryKeyColumn) && expectedPrimaryKey != null)
+        {
+            var primaryKeyValue = row[_schema.PrimaryKeyColumn];
+            if (!Equals(primaryKeyValue, expectedPrimaryKey))
+            {
+                throw new InvalidOperationException(
+                    $"Update key '{expectedPrimaryKey}' does not match row primary key value '{primaryKeyValue}'.");
+            }
+        }
+    }
+
+    private static bool IsValueCompatibleWithColumnType(object value, DataType dataType)
+    {
+        return dataType switch
+        {
+            DataType.Byte => value is byte,
+            DataType.SByte => value is sbyte,
+            DataType.Short => value is short,
+            DataType.UShort => value is ushort,
+            DataType.Int => value is int,
+            DataType.UInt => value is uint,
+            DataType.Long => value is long,
+            DataType.ULong => value is ulong,
+            DataType.Bool => value is bool,
+            DataType.Char => value is char,
+            DataType.String => value is string,
+            DataType.Float => value is float,
+            DataType.Double => value is double,
+            DataType.Decimal => value is decimal,
+            DataType.DateTime => value is DateTime,
+            _ => false
+        };
     }
     
     private DataRow DeserializeRow(byte[] data)

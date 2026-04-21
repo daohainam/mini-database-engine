@@ -63,11 +63,7 @@ public class BPlusTree
     }
     
     /// <summary>
-    /// Delete a key-value pair from the B+ Tree
-    /// NOTE: This is a simplified implementation that does not perform node rebalancing
-    /// or merging after deletion. This may lead to suboptimal tree structure over time
-    /// with many deletions, potentially affecting performance. For production use,
-    /// consider implementing proper node merging and redistribution.
+    /// Delete a key-value pair from the B+ Tree.
     /// </summary>
     public bool Delete(object key)
     {
@@ -80,8 +76,13 @@ public class BPlusTree
             {
                 leaf.Keys.RemoveAt(index);
                 ((BPlusTreeLeafNode)leaf).Values.RemoveAt(index);
-                
-                // Handle underflow if necessary (simplified - no rebalancing)
+
+                if (leaf == _root)
+                    return true;
+
+                if (leaf.KeyCount < MinLeafKeys())
+                    RebalanceLeafNode(leaf);
+
                 return true;
             }
             
@@ -291,6 +292,294 @@ public class BPlusTree
         node.Children.RemoveRange(mid + 1, node.Children.Count - mid - 1);
         
         InsertIntoParent(node, promotedKey, newNode);
+    }
+
+    private int MinLeafKeys() => _order / 2;
+
+    private int MinInternalKeys() => ((_order + 1) / 2) - 1;
+
+    private void RebalanceLeafNode(BPlusTreeLeafNode leaf)
+    {
+        if (leaf.Parent is not BPlusTreeInternalNode parent)
+            return;
+
+        int nodeIndex = parent.Children.IndexOf(leaf);
+        if (nodeIndex < 0)
+            throw new InvalidOperationException("Leaf node was not found in parent children.");
+
+        var leftSibling = nodeIndex > 0 ? parent.Children[nodeIndex - 1] as BPlusTreeLeafNode : null;
+        var rightSibling = nodeIndex < parent.Children.Count - 1 ? parent.Children[nodeIndex + 1] as BPlusTreeLeafNode : null;
+
+        if (leftSibling != null && leftSibling.KeyCount > MinLeafKeys())
+        {
+            var borrowedKey = leftSibling.Keys[^1];
+            var borrowedValue = leftSibling.Values[^1];
+            leftSibling.Keys.RemoveAt(leftSibling.Keys.Count - 1);
+            leftSibling.Values.RemoveAt(leftSibling.Values.Count - 1);
+
+            leaf.Keys.Insert(0, borrowedKey);
+            leaf.Values.Insert(0, borrowedValue);
+            parent.Keys[nodeIndex - 1] = leaf.Keys[0];
+            return;
+        }
+
+        if (rightSibling != null && rightSibling.KeyCount > MinLeafKeys())
+        {
+            var borrowedKey = rightSibling.Keys[0];
+            var borrowedValue = rightSibling.Values[0];
+            rightSibling.Keys.RemoveAt(0);
+            rightSibling.Values.RemoveAt(0);
+
+            leaf.Keys.Add(borrowedKey);
+            leaf.Values.Add(borrowedValue);
+            parent.Keys[nodeIndex] = rightSibling.Keys[0];
+            return;
+        }
+
+        if (leftSibling != null)
+        {
+            leftSibling.Keys.AddRange(leaf.Keys);
+            leftSibling.Values.AddRange(leaf.Values);
+            leftSibling.Next = leaf.Next;
+            if (leaf.Next != null)
+                leaf.Next.Previous = leftSibling;
+
+            parent.Children.RemoveAt(nodeIndex);
+            parent.Keys.RemoveAt(nodeIndex - 1);
+            RebalanceInternalNode(parent);
+            return;
+        }
+
+        if (rightSibling != null)
+        {
+            leaf.Keys.AddRange(rightSibling.Keys);
+            leaf.Values.AddRange(rightSibling.Values);
+            leaf.Next = rightSibling.Next;
+            if (rightSibling.Next != null)
+                rightSibling.Next.Previous = leaf;
+
+            parent.Children.RemoveAt(nodeIndex + 1);
+            parent.Keys.RemoveAt(nodeIndex);
+            RebalanceInternalNode(parent);
+        }
+    }
+
+    private void RebalanceInternalNode(BPlusTreeInternalNode node)
+    {
+        if (node == _root)
+        {
+            if (node.Children.Count == 1)
+            {
+                _root = node.Children[0];
+                _root.Parent = null;
+            }
+            return;
+        }
+
+        if (node.KeyCount >= MinInternalKeys())
+            return;
+
+        if (node.Parent is not BPlusTreeInternalNode parent)
+            throw new InvalidOperationException("Internal node parent is invalid.");
+
+        int nodeIndex = parent.Children.IndexOf(node);
+        if (nodeIndex < 0)
+            throw new InvalidOperationException("Internal node was not found in parent children.");
+
+        var leftSibling = nodeIndex > 0 ? parent.Children[nodeIndex - 1] as BPlusTreeInternalNode : null;
+        var rightSibling = nodeIndex < parent.Children.Count - 1 ? parent.Children[nodeIndex + 1] as BPlusTreeInternalNode : null;
+
+        if (leftSibling != null && leftSibling.KeyCount > MinInternalKeys())
+        {
+            var borrowedChild = leftSibling.Children[^1];
+            leftSibling.Children.RemoveAt(leftSibling.Children.Count - 1);
+
+            var parentKey = parent.Keys[nodeIndex - 1];
+            var borrowedKey = leftSibling.Keys[^1];
+            leftSibling.Keys.RemoveAt(leftSibling.Keys.Count - 1);
+
+            node.Keys.Insert(0, parentKey);
+            node.Children.Insert(0, borrowedChild);
+            borrowedChild.Parent = node;
+            parent.Keys[nodeIndex - 1] = borrowedKey;
+            return;
+        }
+
+        if (rightSibling != null && rightSibling.KeyCount > MinInternalKeys())
+        {
+            var borrowedChild = rightSibling.Children[0];
+            rightSibling.Children.RemoveAt(0);
+
+            var parentKey = parent.Keys[nodeIndex];
+            var borrowedKey = rightSibling.Keys[0];
+            rightSibling.Keys.RemoveAt(0);
+
+            node.Keys.Add(parentKey);
+            node.Children.Add(borrowedChild);
+            borrowedChild.Parent = node;
+            parent.Keys[nodeIndex] = borrowedKey;
+            return;
+        }
+
+        if (leftSibling != null)
+        {
+            var separator = parent.Keys[nodeIndex - 1];
+            leftSibling.Keys.Add(separator);
+            leftSibling.Keys.AddRange(node.Keys);
+            foreach (var child in node.Children)
+            {
+                leftSibling.Children.Add(child);
+                child.Parent = leftSibling;
+            }
+
+            parent.Children.RemoveAt(nodeIndex);
+            parent.Keys.RemoveAt(nodeIndex - 1);
+            RebalanceInternalNode(parent);
+            return;
+        }
+
+        if (rightSibling != null)
+        {
+            var separator = parent.Keys[nodeIndex];
+            node.Keys.Add(separator);
+            node.Keys.AddRange(rightSibling.Keys);
+            foreach (var child in rightSibling.Children)
+            {
+                node.Children.Add(child);
+                child.Parent = node;
+            }
+
+            parent.Children.RemoveAt(nodeIndex + 1);
+            parent.Keys.RemoveAt(nodeIndex);
+            RebalanceInternalNode(parent);
+        }
+    }
+
+    public void ValidateInvariants()
+    {
+        lock (_lockObject)
+        {
+            if (_root == null)
+                throw new InvalidOperationException("Root node cannot be null.");
+
+            int? leafDepth = null;
+            ValidateNode(_root, isRoot: true, depth: 0, ref leafDepth, lowerBound: null, upperBound: null);
+            ValidateLeafChain();
+        }
+    }
+
+    private void ValidateNode(
+        BPlusTreeNode node,
+        bool isRoot,
+        int depth,
+        ref int? leafDepth,
+        object? lowerBound,
+        object? upperBound)
+    {
+        if (node.KeyCount > _order - 1)
+            throw new InvalidOperationException("Node exceeds maximum key count.");
+
+        for (int i = 1; i < node.Keys.Count; i++)
+        {
+            if (_comparer.Compare(node.Keys[i - 1], node.Keys[i]) >= 0)
+                throw new InvalidOperationException("Node keys must be strictly increasing.");
+        }
+
+        if (!isRoot)
+        {
+            int minKeys = node.IsLeaf ? MinLeafKeys() : MinInternalKeys();
+            if (node.KeyCount < minKeys)
+                throw new InvalidOperationException("Node is under minimum key count.");
+        }
+
+        if (node.IsLeaf)
+        {
+            var leaf = (BPlusTreeLeafNode)node;
+            if (leaf.Values.Count != leaf.Keys.Count)
+                throw new InvalidOperationException("Leaf values count must match key count.");
+
+            ValidateBounds(leaf.Keys, lowerBound, upperBound);
+
+            if (leafDepth == null)
+                leafDepth = depth;
+            else if (leafDepth.Value != depth)
+                throw new InvalidOperationException("All leaves must be at the same depth.");
+
+            return;
+        }
+
+        var internalNode = (BPlusTreeInternalNode)node;
+        if (internalNode.Children.Count != internalNode.Keys.Count + 1)
+            throw new InvalidOperationException("Internal node children count must equal keys + 1.");
+
+        if (isRoot && internalNode.Children.Count < 2)
+            throw new InvalidOperationException("Root internal node must have at least two children.");
+
+        for (int i = 0; i < internalNode.Children.Count; i++)
+        {
+            if (!ReferenceEquals(internalNode.Children[i].Parent, internalNode))
+                throw new InvalidOperationException("Child parent pointer is invalid.");
+
+            object? childLower = i == 0 ? lowerBound : internalNode.Keys[i - 1];
+            object? childUpper = i == internalNode.Children.Count - 1 ? upperBound : internalNode.Keys[i];
+            ValidateNode(internalNode.Children[i], false, depth + 1, ref leafDepth, childLower, childUpper);
+
+            if (i > 0)
+            {
+                var expectedSeparator = GetLeftmostKey(internalNode.Children[i]);
+                if (_comparer.Compare(internalNode.Keys[i - 1], expectedSeparator) != 0)
+                    throw new InvalidOperationException("Internal separator key is inconsistent with right subtree.");
+            }
+        }
+    }
+
+    private void ValidateBounds(IReadOnlyList<object> keys, object? lowerBound, object? upperBound)
+    {
+        foreach (var key in keys)
+        {
+            if (lowerBound != null && _comparer.Compare(key, lowerBound) < 0)
+                throw new InvalidOperationException("Key is less than lower bound.");
+
+            if (upperBound != null && _comparer.Compare(key, upperBound) >= 0)
+                throw new InvalidOperationException("Key is greater than or equal to upper bound.");
+        }
+    }
+
+    private object GetLeftmostKey(BPlusTreeNode node)
+    {
+        var current = node;
+        while (!current.IsLeaf)
+        {
+            current = ((BPlusTreeInternalNode)current).Children[0];
+        }
+
+        if (current.Keys.Count == 0)
+            throw new InvalidOperationException("Encountered empty leaf while validating separators.");
+
+        return current.Keys[0];
+    }
+
+    private void ValidateLeafChain()
+    {
+        var leaf = GetFirstLeaf();
+        BPlusTreeLeafNode? previous = null;
+        object? previousKey = null;
+
+        while (leaf != null)
+        {
+            if (!ReferenceEquals(leaf.Previous, previous))
+                throw new InvalidOperationException("Leaf previous pointer is inconsistent.");
+
+            foreach (var key in leaf.Keys)
+            {
+                if (previousKey != null && _comparer.Compare(previousKey, key) >= 0)
+                    throw new InvalidOperationException("Leaf chain keys must be strictly increasing.");
+                previousKey = key;
+            }
+
+            previous = leaf;
+            leaf = leaf.Next;
+        }
     }
     
     private class DataTypeComparer : IComparer<object>
