@@ -139,7 +139,7 @@ public class TableQueryProvider : IQueryProvider
 
             if (plan.IndexRange.HasLowerBound || plan.IndexRange.HasUpperBound)
             {
-                return _table.SelectByPrimaryKeyRange(plan.IndexRange.InclusiveMinKey, plan.IndexRange.InclusiveMaxKey);
+                return _table.SelectByPrimaryKeyRange(plan.IndexRange.LowerBound, plan.IndexRange.UpperBound);
             }
         }
 
@@ -225,9 +225,6 @@ internal sealed class IndexRangeConstraint
     public bool IsUpperInclusive { get; private set; }
     public bool HasLowerBound { get; private set; }
     public bool HasUpperBound { get; private set; }
-
-    public object? InclusiveMinKey => HasLowerBound && !IsLowerInclusive ? LowerBound : LowerBound;
-    public object? InclusiveMaxKey => HasUpperBound && !IsUpperInclusive ? UpperBound : UpperBound;
 
     public static IndexRangeConstraint Merge(IndexRangeConstraint? current, IndexRangeConstraint next, IComparer<object> comparer)
     {
@@ -449,7 +446,7 @@ internal static class PrimaryKeyConstraintParser
 
     private static bool TryEvaluateValue(Expression expression, ParameterExpression rowParameter, DataType primaryKeyType, out object value)
     {
-        value = null!;
+        value = string.Empty;
         if (ContainsParameter(expression, rowParameter))
             return false;
 
