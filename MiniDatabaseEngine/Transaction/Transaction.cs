@@ -1,3 +1,5 @@
+using MiniDatabaseEngine.Storage;
+
 namespace MiniDatabaseEngine.Transaction;
 
 /// <summary>
@@ -164,6 +166,44 @@ public class Transaction : IDisposable
         };
         _entries.Add(entry);
         _walManager.AppendEntry(entry);
+    }
+
+    internal bool HasBufferedValueForKey(string tableName, object key, DataType keyType)
+    {
+        for (int i = _entries.Count - 1; i >= 0; i--)
+        {
+            var entry = _entries[i];
+            if (!string.Equals(entry.TableName, tableName, StringComparison.Ordinal))
+                continue;
+
+            if (!KeysEqual(entry.Key, key, keyType))
+                continue;
+
+            return entry.OperationType switch
+            {
+                WALOperationType.Insert => true,
+                WALOperationType.Update => true,
+                WALOperationType.Delete => false,
+                _ => false
+            };
+        }
+
+        return false;
+    }
+
+    private static bool KeysEqual(object? left, object right, DataType keyType)
+    {
+        if (left == null)
+            return false;
+
+        try
+        {
+            return DataSerializer.Compare(left, right, keyType) == 0;
+        }
+        catch (InvalidCastException)
+        {
+            return false;
+        }
     }
 
     private void EnsureActive()
