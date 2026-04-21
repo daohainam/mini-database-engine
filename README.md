@@ -13,6 +13,10 @@ A simple embedded database engine in C# and .NET 10 demonstrating B+ tree data s
 - **Thread-Safe**: All data modification operations are protected with reader-writer locks
 - **Caching**: In-memory LRU page cache for improved performance
 - **Memory-Mapped Files**: Optional support for memory-mapped files for larger datasets
+- **Structured Logs**: Pluggable structured logging for operational events
+- **Metrics**: Built-in counters for core database operations
+- **Integrity Checks**: Corruption detection helpers for database and WAL files
+- **Backup/Restore**: Built-in operational backup and restore tooling
 
 ## Project Structure
 
@@ -181,6 +185,41 @@ catch
 ```csharp
 // Flush all data and create a checkpoint in the WAL
 db.Checkpoint();
+```
+
+### Observability (Structured Logs + Metrics)
+
+```csharp
+using var db = new Database(
+    "mydata.mde",
+    options: new DatabaseOptions
+    {
+        Logger = new JsonConsoleDatabaseLogger(),
+        EnableMetrics = true
+    });
+
+var metrics = db.GetMetricsSnapshot();
+Console.WriteLine($"Inserts: {metrics.Inserts}, Checkpoints: {metrics.Checkpoints}");
+```
+
+### Corruption Detection
+
+```csharp
+var integrity = db.CheckIntegrity();
+if (!integrity.IsHealthy)
+{
+    foreach (var issue in integrity.Issues)
+    {
+        Console.WriteLine(issue);
+    }
+}
+```
+
+### Backup and Restore
+
+```csharp
+var backupPath = db.CreateBackup("./backups", includeWal: true);
+Database.RestoreBackup(backupPath, "restored.mde", overwrite: true);
 ```
 
 ### Crash Recovery

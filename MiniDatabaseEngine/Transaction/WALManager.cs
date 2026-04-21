@@ -8,6 +8,13 @@ public sealed class WALRecoveryMetadata
     public long NextTransactionIdHint { get; init; }
 }
 
+public sealed class WALIntegrityReport
+{
+    public bool IsHealthy { get; init; }
+    public int ValidEntryCount { get; init; }
+    public IReadOnlyList<string> Issues { get; init; } = Array.Empty<string>();
+}
+
 /// <summary>
 /// Manages the Write-Ahead Log file
 /// </summary>
@@ -41,6 +48,8 @@ public class WALManager : IDisposable
             LoadLastSequenceNumber();
         }
     }
+
+    public string FilePath => _walFilePath;
 
     /// <summary>
     /// Append a WAL entry to the log
@@ -331,6 +340,86 @@ public class WALManager : IDisposable
                     (e.TransactionId > 0 && activeAtCheckpoint.Contains(e.TransactionId)))
                 .OrderBy(e => e.SequenceNumber)
                 .ToList();
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+
+    public WALIntegrityReport ValidateIntegrity()
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            var issues = new List<string>();
+            int validEntries = 0;
+            long lastSequence = 0;
+
+            _walStream.Seek(0, SeekOrigin.Begin);
+            using var reader = new BinaryReader(_walStream, System.Text.Encoding.UTF8, leaveOpen: true);
+            while (_walStream.Position < _walStream.Length)
+            {
+                var entryStart = _walStream.Position;
+                if (_walStream.Length - entryStart < sizeof(int))
+                {
+                    issues.Add("WAL has a truncated entry length prefix.");
+                    break;
+                }
+
+                int length = reader.ReadInt32();
+                if (length <= 0 || length > MaxWALEntrySize)
+                {
+                    issues.Add($"WAL entry at byte {entryStart} has invalid length {length}.");
+                    break;
+                }
+
+                if (_walStream.Length - _walStream.Position < length)
+                {
+                    issues.Add($"WAL entry at byte {entryStart} is truncated.");
+                    break;
+                }
+
+                var payload = reader.ReadBytes(length);
+                if (payload.Length != length)
+                {
+                    issues.Add($"WAL entry at byte {entryStart} payload could not be read fully.");
+                    break;
+                }
+
+                WALEntry entry;
+                try
+                {
+                    entry = WALEntry.Deserialize(payload);
+                }
+                catch (Exception ex) when (ex is InvalidDataException || ex is EndOfStreamException || ex is NotSupportedException)
+                {
+                    issues.Add($"WAL entry at byte {entryStart} failed to deserialize: {ex.Message}");
+                    break;
+                }
+
+                if (entry.SequenceNumber <= 0)
+                {
+                    issues.Add($"WAL entry at byte {entryStart} has non-positive sequence number {entry.SequenceNumber}.");
+                    break;
+                }
+
+                if (entry.SequenceNumber < lastSequence)
+                {
+                    issues.Add("WAL sequence numbers are not monotonic.");
+                    break;
+                }
+
+                lastSequence = entry.SequenceNumber;
+                validEntries++;
+            }
+
+            return new WALIntegrityReport
+            {
+                IsHealthy = issues.Count == 0,
+                ValidEntryCount = validEntries,
+                Issues = issues
+            };
         }
         finally
         {

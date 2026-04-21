@@ -33,27 +33,42 @@ public class Database : IDisposable
     private const int HeaderOffsetTableCount = 12;
     private const int HeaderOffsetCatalogRootPageId = 16;
     private const int HeaderOffsetCatalogLength = 20;
+    private const int HeaderOffsetVersion = 4;
+    private const int HeaderOffsetNextPageId = 8;
     private const int NoPage = -1;
+    private const int HeaderMagicNumber = 0x4D4445; // MDE
     private const int CatalogFormatVersion = 1;
     private const int CatalogPageMagic = 0x43415450; // CATP
     private const int CatalogPageHeaderSize = 12; // Magic(4) + NextPageId(4) + PayloadLength(4)
     private const int MaxCatalogEntrySize = 16 * 1024 * 1024; // 16 MB safety cap
 
     private readonly StorageEngine _storage;
+    private readonly string _databaseFilePath;
+    private readonly string _walFilePath;
     private readonly ConcurrentDictionary<string, Table> _tables;
     private readonly ReaderWriterLockSlim _lock;
     private readonly WALManager _walManager;
     private readonly TransactionManager _transactionManager;
     private readonly Dictionary<string, List<WALEntry>> _pendingRecoveryEntries;
+    private readonly IDatabaseLogger _logger;
+    private readonly bool _metricsEnabled;
+    private readonly DatabaseMetrics _metrics;
     private bool _disposed;
     
-    public Database(string filePath, int cacheSize = 100, bool useMemoryMappedFile = false)
+    public Database(string filePath, int cacheSize = 100, bool useMemoryMappedFile = false, DatabaseOptions? options = null)
     {
         if (string.IsNullOrEmpty(filePath))
             throw new ArgumentNullException(nameof(filePath));
         
         if (!filePath.EndsWith(".mde", StringComparison.OrdinalIgnoreCase))
             filePath += ".mde";
+
+        options ??= new DatabaseOptions();
+        _databaseFilePath = filePath;
+        _walFilePath = Path.ChangeExtension(filePath, ".wal");
+        _logger = options.Logger ?? NullDatabaseLogger.Instance;
+        _metricsEnabled = options.EnableMetrics;
+        _metrics = new DatabaseMetrics();
         
         _storage = new StorageEngine(filePath, cacheSize, useMemoryMappedFile);
         _tables = new ConcurrentDictionary<string, Table>();
@@ -64,6 +79,10 @@ public class Database : IDisposable
 
         LoadCatalogFromStorage();
         RecoverFromWAL();
+        Log(DatabaseLogLevel.Information, "database.opened", "Database opened", new Dictionary<string, object?>
+        {
+            ["path"] = _databaseFilePath
+        });
     }
     
     /// <summary>
@@ -99,6 +118,12 @@ public class Database : IDisposable
             }
 
             SaveCatalogToStorage(lockSchema: false);
+            TrackMetric(m => m.IncrementTablesCreated());
+            Log(DatabaseLogLevel.Information, "table.created", "Table created", new Dictionary<string, object?>
+            {
+                ["table"] = tableName,
+                ["columns"] = columns.Count
+            });
             
             return table;
         }
@@ -141,6 +166,8 @@ public class Database : IDisposable
     /// </summary>
     public Transaction.Transaction BeginTransaction()
     {
+        TrackMetric(m => m.IncrementTransactionsStarted());
+        Log(DatabaseLogLevel.Debug, "transaction.started", "Transaction started");
         return _transactionManager.BeginTransaction();
     }
     
@@ -151,6 +178,12 @@ public class Database : IDisposable
     {
         var table = GetTable(tableName);
         table.Insert(row, transaction);
+        TrackMetric(m => m.IncrementInserts());
+        Log(DatabaseLogLevel.Debug, "row.inserted", "Row inserted", new Dictionary<string, object?>
+        {
+            ["table"] = tableName,
+            ["transactional"] = transaction != null
+        });
     }
     
     /// <summary>
@@ -159,7 +192,17 @@ public class Database : IDisposable
     public bool Update(string tableName, object key, DataRow row, Transaction.Transaction? transaction = null)
     {
         var table = GetTable(tableName);
-        return table.Update(key, row, transaction);
+        var updated = table.Update(key, row, transaction);
+        if (updated)
+        {
+            TrackMetric(m => m.IncrementUpdates());
+            Log(DatabaseLogLevel.Debug, "row.updated", "Row updated", new Dictionary<string, object?>
+            {
+                ["table"] = tableName,
+                ["transactional"] = transaction != null
+            });
+        }
+        return updated;
     }
     
     /// <summary>
@@ -168,7 +211,17 @@ public class Database : IDisposable
     public bool Delete(string tableName, object key, Transaction.Transaction? transaction = null)
     {
         var table = GetTable(tableName);
-        return table.Delete(key, transaction);
+        var deleted = table.Delete(key, transaction);
+        if (deleted)
+        {
+            TrackMetric(m => m.IncrementDeletes());
+            Log(DatabaseLogLevel.Debug, "row.deleted", "Row deleted", new Dictionary<string, object?>
+            {
+                ["table"] = tableName,
+                ["transactional"] = transaction != null
+            });
+        }
+        return deleted;
     }
     
     /// <summary>
@@ -182,6 +235,8 @@ public class Database : IDisposable
         var nextTransactionIdHint = _transactionManager.GetNextTransactionIdHint();
         _walManager.Checkpoint(activeTransactions, nextTransactionIdHint);
         _walManager.TruncateAfterCheckpoint();
+        TrackMetric(m => m.IncrementCheckpoints());
+        Log(DatabaseLogLevel.Information, "database.checkpoint", "Checkpoint completed");
     }
     
     /// <summary>
@@ -192,6 +247,162 @@ public class Database : IDisposable
         SaveCatalogToStorage();
         _storage.Flush();
         _walManager.Flush();
+        TrackMetric(m => m.IncrementFlushes());
+        Log(DatabaseLogLevel.Debug, "database.flushed", "Database flushed to disk");
+    }
+
+    public DatabaseMetricsSnapshot GetMetricsSnapshot()
+    {
+        return _metrics.Snapshot();
+    }
+
+    public DatabaseIntegrityReport CheckIntegrity()
+    {
+        var issues = new List<string>();
+        try
+        {
+            if (!File.Exists(_databaseFilePath))
+            {
+                issues.Add("Database file does not exist.");
+            }
+            else
+            {
+                var fileLength = new FileInfo(_databaseFilePath).Length;
+                if (fileLength < Page.PageSize)
+                {
+                    issues.Add($"Database file is too small ({fileLength} bytes).");
+                }
+                else if (fileLength % Page.PageSize != 0)
+                {
+                    issues.Add($"Database file size {fileLength} is not aligned to page size {Page.PageSize}.");
+                }
+
+                var header = _storage.ReadPage(StorageEngine.HeaderPageId);
+                using var ms = new MemoryStream(header.Data);
+                using var reader = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+                var magic = reader.ReadInt32();
+                if (magic != HeaderMagicNumber)
+                    issues.Add($"Invalid database header magic number: {magic}.");
+
+                ms.Seek(HeaderOffsetVersion, SeekOrigin.Begin);
+                int version = reader.ReadInt32();
+                if (version <= 0)
+                    issues.Add($"Invalid database version: {version}.");
+
+                ms.Seek(HeaderOffsetNextPageId, SeekOrigin.Begin);
+                int nextPageId = reader.ReadInt32();
+                if (nextPageId <= 0)
+                    issues.Add($"Invalid next page ID: {nextPageId}.");
+
+                var (rootPageId, catalogLength) = ReadCatalogPointers();
+                if (rootPageId < NoPage)
+                    issues.Add($"Invalid catalog root page ID: {rootPageId}.");
+                if (catalogLength < 0)
+                    issues.Add($"Invalid catalog length: {catalogLength}.");
+
+                if (rootPageId > 0 && catalogLength > 0)
+                {
+                    try
+                    {
+                        _ = ReadCatalogBytes(rootPageId, catalogLength);
+                    }
+                    catch (Exception ex) when (ex is InvalidDataException || ex is EndOfStreamException)
+                    {
+                        issues.Add($"Catalog validation failed: {ex.Message}");
+                    }
+                }
+            }
+
+            var walIntegrity = _walManager.ValidateIntegrity();
+            foreach (var issue in walIntegrity.Issues)
+            {
+                issues.Add($"WAL: {issue}");
+            }
+        }
+        catch (Exception ex)
+        {
+            issues.Add($"Integrity check failed with exception: {ex.Message}");
+        }
+
+        var report = new DatabaseIntegrityReport
+        {
+            IsHealthy = issues.Count == 0,
+            Issues = issues
+        };
+        TrackMetric(m => m.IncrementIntegrityChecks());
+        Log(report.IsHealthy ? DatabaseLogLevel.Information : DatabaseLogLevel.Warning, "database.integrity_check", "Integrity check completed", new Dictionary<string, object?>
+        {
+            ["healthy"] = report.IsHealthy,
+            ["issues"] = report.Issues.Count
+        });
+        return report;
+    }
+
+    public string CreateBackup(string backupDirectory, string? backupName = null, bool includeWal = true)
+    {
+        if (string.IsNullOrWhiteSpace(backupDirectory))
+            throw new ArgumentException("Backup directory is required.", nameof(backupDirectory));
+
+        Flush();
+        Directory.CreateDirectory(backupDirectory);
+
+        var namePrefix = string.IsNullOrWhiteSpace(backupName)
+            ? $"backup-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfffffff}-{Guid.NewGuid():N}"
+            : backupName.Trim();
+        var backupPath = Path.Combine(backupDirectory, namePrefix);
+        Directory.CreateDirectory(backupPath);
+
+        var dbTargetPath = Path.Combine(backupPath, Path.GetFileName(_databaseFilePath));
+        File.Copy(_databaseFilePath, dbTargetPath, overwrite: true);
+
+        if (includeWal && File.Exists(_walFilePath))
+        {
+            var walTargetPath = Path.Combine(backupPath, Path.GetFileName(_walFilePath));
+            File.Copy(_walFilePath, walTargetPath, overwrite: true);
+        }
+
+        TrackMetric(m => m.IncrementBackupsCreated());
+        Log(DatabaseLogLevel.Information, "database.backup_created", "Backup created", new Dictionary<string, object?>
+        {
+            ["backupPath"] = backupPath
+        });
+        return backupPath;
+    }
+
+    public static void RestoreBackup(string backupPath, string destinationDatabasePath, bool overwrite = false)
+    {
+        if (string.IsNullOrWhiteSpace(backupPath))
+            throw new ArgumentException("Backup path is required.", nameof(backupPath));
+        if (string.IsNullOrWhiteSpace(destinationDatabasePath))
+            throw new ArgumentException("Destination path is required.", nameof(destinationDatabasePath));
+        if (!Directory.Exists(backupPath))
+            throw new DirectoryNotFoundException($"Backup directory not found: {backupPath}");
+
+        var backupDbFile = Directory.GetFiles(backupPath, "*.mde", SearchOption.TopDirectoryOnly).SingleOrDefault();
+        if (backupDbFile == null)
+            throw new InvalidOperationException("Backup directory does not contain a .mde database file.");
+
+        if (!destinationDatabasePath.EndsWith(".mde", StringComparison.OrdinalIgnoreCase))
+            destinationDatabasePath += ".mde";
+
+        var destinationDirectory = Path.GetDirectoryName(destinationDatabasePath);
+        if (!string.IsNullOrEmpty(destinationDirectory))
+        {
+            Directory.CreateDirectory(destinationDirectory);
+        }
+
+        File.Copy(backupDbFile, destinationDatabasePath, overwrite);
+
+        var backupWalFile = Directory.GetFiles(backupPath, "*.wal", SearchOption.TopDirectoryOnly).SingleOrDefault();
+        var destinationWalFile = Path.ChangeExtension(destinationDatabasePath, ".wal");
+        if (backupWalFile != null)
+        {
+            File.Copy(backupWalFile, destinationWalFile, overwrite);
+        }
+        else if (overwrite && File.Exists(destinationWalFile))
+        {
+            File.Delete(destinationWalFile);
+        }
     }
     
     private void ApplyCommittedEntries(IReadOnlyList<WALEntry> entries)
@@ -240,12 +451,14 @@ public class Database : IDisposable
     /// </summary>
     private void RecoverFromWAL()
     {
+        int replayedEntries = 0;
         _transactionManager.RecoverFromWAL(entry =>
         {
             // If table exists, apply immediately
             if (_tables.TryGetValue(entry.TableName, out var table))
             {
                 ApplyWALEntryToTable(table, entry);
+                replayedEntries++;
             }
             else
             {
@@ -256,6 +469,10 @@ public class Database : IDisposable
                 }
                 _pendingRecoveryEntries[entry.TableName].Add(entry);
             }
+        });
+        Log(DatabaseLogLevel.Information, "database.recovered", "WAL recovery completed", new Dictionary<string, object?>
+        {
+            ["replayedEntries"] = replayedEntries
         });
     }
 
@@ -627,5 +844,31 @@ public class Database : IDisposable
         _storage?.Dispose();
         _disposed = true;
         GC.SuppressFinalize(this);
+    }
+
+    private void TrackMetric(Action<DatabaseMetrics> updateAction)
+    {
+        if (_metricsEnabled)
+            updateAction(_metrics);
+    }
+
+    private void Log(DatabaseLogLevel level, string eventName, string message, IReadOnlyDictionary<string, object?>? properties = null)
+    {
+        try
+        {
+            _logger.Log(new DatabaseLogEntry
+            {
+                Timestamp = DateTimeOffset.UtcNow,
+                Level = level,
+                EventName = eventName,
+                Message = message,
+                Properties = properties ?? new Dictionary<string, object?>()
+            });
+        }
+        catch
+        {
+            // Logging must never impact database operations.
+            System.Diagnostics.Debug.WriteLine($"MiniDatabaseEngine logging failure for event '{eventName}'.");
+        }
     }
 }
