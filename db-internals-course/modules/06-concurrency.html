@@ -1,0 +1,484 @@
+<section class="module" id="module-6" style="background: var(--color-bg)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">06</span>
+      <h1 class="module-title">Concurrency: Many Hands, One Ledger</h1>
+      <p class="module-subtitle">How the database lets dozens of people read and write at the same time without anyone crashing into anyone else.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ============ SCREEN 1: The subway door ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The Subway Revolving Door</h2>
+        <p>Picture a revolving door at a subway station. Many people can walk through at the same time, as long as they are all going the same direction. But if one person stops in the middle to tie their shoelaces, everyone else must wait until they are done.</p>
+        <p>That is exactly how a database handles <span class="term" data-definition="When many tasks happen at roughly the same time. A database serves concurrent users by letting their work overlap without interfering with each other.">concurrency</span>. Many readers can flow through together. A single writer gets the door to themselves. The trick is making sure no one ever crashes into anyone else.</p>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">🎟️</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why this matters</strong>
+            <p>Two users click "Buy" on the last ticket at the exact same millisecond. Who gets it? If the database answers wrong even once, the business loses trust. Concurrency control is the invisible layer that answers it billions of times a day.</p>
+          </div>
+        </div>
+
+        <h3 style="font-family: var(--font-display); font-size: var(--text-xl); margin-top: var(--space-10);">The door has three states</h3>
+        <p>A <span class="term" data-definition="A reader-writer lock is a coordination tool that lets many readers enter a section of code at once, but only one writer at a time, and never both. It is perfect when reads vastly outnumber writes.">reader-writer lock</span> keeps track of which state the door is in right now.</p>
+
+        <div class="icon-rows stagger-children" style="margin-top: var(--space-6);">
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-text-muted); font-family: var(--font-mono); color: white; font-size: 0.9rem;">IDLE</div>
+            <div>
+              <strong>No one is inside</strong>
+              <p>The door sits still. The next person (reader or writer) can walk right in.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2); font-family: var(--font-mono); color: white; font-size: 0.8rem;">READ·N</div>
+            <div>
+              <strong>Any number of readers inside</strong>
+              <p>More readers can still join. Writers must wait outside until every reader has left.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-accent); font-family: var(--font-mono); color: white; font-size: 0.8rem;">WRITE·1</div>
+            <div>
+              <strong>Exactly one writer inside</strong>
+              <p>The door is locked to everyone else. No readers, no other writers, until the writer leaves.</p>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; gap: var(--space-6); align-items: center; margin-top: var(--space-10); flex-wrap: wrap; font-family: var(--font-mono); font-size: var(--text-sm);">
+          <div style="padding: var(--space-4) var(--space-6); border: 2px dashed var(--color-text-muted); border-radius: var(--radius-md); color: var(--color-text-muted);">IDLE</div>
+          <div style="color: var(--color-accent-muted); font-size: var(--text-xl);">&harr;</div>
+          <div style="padding: var(--space-4) var(--space-6); border: 2px solid var(--color-actor-2); border-radius: var(--radius-md); background: var(--color-info-light); color: var(--color-actor-2);">READERS (N)</div>
+          <div style="color: var(--color-accent-muted); font-size: var(--text-xl);">&harr;</div>
+          <div style="padding: var(--space-4) var(--space-6); border: 2px solid var(--color-accent); border-radius: var(--radius-md); background: var(--color-accent-light); color: var(--color-accent);">WRITER (1)</div>
+        </div>
+        <p style="text-align: center; color: var(--color-text-muted); font-size: var(--text-xs); margin-top: var(--space-3); font-style: italic;">Readers and a writer can never coexist. Only the IDLE state connects them.</p>
+      </section>
+
+      <!-- ============ SCREEN 2: The five-level stack ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Five Doors, Stacked</h2>
+        <p>A real database does not have one door. It has five, nested like Russian dolls. Each door guards a different part of the system, from the whole database down to a tiny cache page.</p>
+        <p>When an operation needs to pass through more than one door, it must always pick them up in the same order. That single rule prevents an entire class of bugs called <span class="term" data-definition="A situation where two or more threads wait on each other forever, each holding something the other needs. Nothing moves. Only a restart can free them.">deadlock</span>.</p>
+
+        <div class="icon-rows stagger-children" style="margin-top: var(--space-8);">
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2); color: white;">🔐</div>
+            <div>
+              <strong>Level 1 &middot; Database lock</strong>
+              <p>Protects schema-level operations, like creating or dropping a whole table.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2); color: white;">🔒</div>
+            <div>
+              <strong>Level 2 &middot; Table lock</strong>
+              <p>Per-table read and write coordination. Each table has its own reader-writer lock.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2); color: white;">🔑</div>
+            <div>
+              <strong>Level 3 &middot; B+ Tree lock</strong>
+              <p>Guards tree structural changes like node splits and leaf re-linking.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2); color: white;">🗝️</div>
+            <div>
+              <strong>Level 4 &middot; StorageEngine lock</strong>
+              <p>Protects page-level disk input and output as blocks are read and written.</p>
+            </div>
+          </div>
+          <div class="icon-row animate-in">
+            <div class="icon-circle" style="background: var(--color-actor-2); color: white;">📎</div>
+            <div>
+              <strong>Level 5 &middot; PageCache / ExtentCache locks</strong>
+              <p>Guards the in-memory caches that track which pages are hot and which can be evicted.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-8);">The rule is simple to say and life-saving to follow: <strong>always acquire locks in order from level 1 down to level 5</strong>. Never the other way. That contract is written directly into the source code as a comment.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line"><span class="code-comment">/// &lt;summary&gt;</span></span>
+<span class="code-line"><span class="code-comment">/// Thread Safety:</span></span>
+<span class="code-line"><span class="code-comment">/// This class uses ReaderWriterLockSlim to ensure thread-safe operations.</span></span>
+<span class="code-line"><span class="code-comment">/// Multiple threads can read concurrently, but write operations are exclusive.</span></span>
+<span class="code-line"><span class="code-comment">/// </span></span>
+<span class="code-line"><span class="code-comment">/// Lock Ordering (to prevent deadlocks when nested locking occurs):</span></span>
+<span class="code-line"><span class="code-comment">/// When multiple locks need to be acquired, always acquire them in this order:</span></span>
+<span class="code-line"><span class="code-comment">/// 1. Database._lock (schema-level operations)</span></span>
+<span class="code-line"><span class="code-comment">/// 2. Table._lock (table-level operations)</span></span>
+<span class="code-line"><span class="code-comment">/// 3. BPlusTree._lockObject (index operations)</span></span>
+<span class="code-line"><span class="code-comment">/// 4. StorageEngine._lock (this class - storage operations)</span></span>
+<span class="code-line"><span class="code-comment">/// 5. PageCache/ExtentCache locks (cache operations)</span></span>
+<span class="code-line"><span class="code-comment">/// &lt;/summary&gt;</span></span>
+<span class="code-line"><span class="code-keyword">public class</span> <span class="code-function">StorageEngine</span> : <span class="code-function">IDisposable</span></span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">private readonly</span> <span class="code-function">ReaderWriterLockSlim</span> _lock;</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">This is a comment block at the top of the file explaining the thread-safety rules for anyone reading the code.</p>
+              <p class="tl">It announces that this class uses <span class="term" data-definition="A .NET tool that coordinates many readers with one writer. Fast, lightweight, and the standard choice for reader-heavy workloads.">ReaderWriterLockSlim</span>, the reader-writer door from the previous screen.</p>
+              <p class="tl">Many threads can read at the same time. Writes get the door all to themselves.</p>
+              <p class="tl">Here comes the real contract. When an operation needs to hold more than one <span class="term" data-definition="A lock is a flag that only one thread (or one group of readers) can own at a time. If another thread wants it, they must wait.">lock</span>, they must be picked up in this exact order.</p>
+              <p class="tl">The five levels, from outermost (whole database) to innermost (cache pages).</p>
+              <p class="tl">Picking up locks in this order is a contract. Two threads that both follow it can never deadlock.</p>
+              <p class="tl">The class itself is just a regular C# class, and its private lock field is a ReaderWriterLockSlim.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">⚖️</div>
+          <div class="callout-content">
+            <strong class="callout-title">Lock ordering is a design discipline, not a runtime check</strong>
+            <p>The compiler will not stop you from violating it. Only the review discipline will. Every new method that takes two locks is a potential deadlock until proven otherwise.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SCREEN 3: Reads vs Writes ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Reading vs Writing: One Word Changes Everything</h2>
+        <p>In the code, the only difference between a read operation and a write operation is a single word. But that word completely changes how the door behaves.</p>
+        <p>Notice how both examples wrap their work in <span class="term" data-definition="A code structure that guarantees a cleanup step always runs, even if the main work throws an error. For locks, this means the lock is always released, no matter what goes wrong.">try/finally</span>. The lock must be released even if the work explodes halfway through. Forgetting that single line is how a database freezes forever.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">WRITE PATH &middot; Table.Insert</span>
+            <pre><code><span class="code-line"><span class="code-keyword">public void</span> <span class="code-function">Insert</span>(DataRow row, Transaction.Transaction? transaction = <span class="code-keyword">null</span>)</span>
+<span class="code-line">{</span>
+<span class="code-line">    _lock.<span class="code-function">EnterWriteLock</span>();</span>
+<span class="code-line">    <span class="code-keyword">try</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">var</span> key = <span class="code-function">GetPrimaryKey</span>(row);</span>
+<span class="code-line">        <span class="code-function">ValidateRowForWrite</span>(row);</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">var</span> keyExists = _index.<span class="code-function">Search</span>(key) != <span class="code-keyword">null</span>;</span>
+<span class="code-line">        <span class="code-keyword">var</span> keyPendingInTransaction = transaction?.<span class="code-function">HasBufferedValueForKey</span>(_schema.TableName, key, <span class="code-function">GetPrimaryKeyDataType</span>()) ?? <span class="code-keyword">false</span>;</span>
+<span class="code-line">        <span class="code-keyword">if</span> (keyExists || keyPendingInTransaction)</span>
+<span class="code-line">            <span class="code-keyword">throw new</span> <span class="code-function">InvalidOperationException</span>(<span class="code-string">$"Duplicate primary key value '{key}'."</span>);</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">var</span> serialized = <span class="code-function">SerializeRow</span>(row);</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">if</span> (transaction != <span class="code-keyword">null</span>)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            transaction.<span class="code-function">LogInsert</span>(_schema.TableName, key, serialized);</span>
+<span class="code-line">            _nextRowId++;</span>
+<span class="code-line">            <span class="code-keyword">return</span>;</span>
+<span class="code-line">        }</span>
+<span class="code-line"></span>
+<span class="code-line">        _index.<span class="code-function">Insert</span>(key, serialized);</span>
+<span class="code-line">        _nextRowId++;</span>
+<span class="code-line">    }</span>
+<span class="code-line">    <span class="code-keyword">finally</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        _lock.<span class="code-function">ExitWriteLock</span>();</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Insert a new row into the table. Optionally part of a transaction.</p>
+              <p class="tl">First, grab the write lock. Only one thread in the entire program can be inside this block at a time for this table.</p>
+              <p class="tl">From here on, everything must be protected. The <em>try</em> block begins the protected region.</p>
+              <p class="tl">Work out the primary key of the incoming row, then check that the row looks valid.</p>
+              <p class="tl">Is this key already in the index? Is it already being added by a transaction that has not committed yet?</p>
+              <p class="tl">If either is true, reject the insert. You cannot have two rows with the same primary key.</p>
+              <p class="tl">Turn the row into bytes so it can be stored.</p>
+              <p class="tl">If this is happening inside a transaction, do not write to the index yet. Just remember it in the transaction buffer for later.</p>
+              <p class="tl">Otherwise, write it straight into the index and bump the row counter.</p>
+              <p class="tl">The <em>finally</em> block runs no matter what &mdash; success, exception, anything. This is where we release the write lock so others can enter the door.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">READ PATH &middot; Table.SelectByKey</span>
+            <pre><code><span class="code-line"><span class="code-keyword">public</span> DataRow? <span class="code-function">SelectByKey</span>(<span class="code-keyword">object</span> key)</span>
+<span class="code-line">{</span>
+<span class="code-line">    _lock.<span class="code-function">EnterReadLock</span>();</span>
+<span class="code-line">    <span class="code-keyword">try</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">var</span> serialized = _index.<span class="code-function">Search</span>(key);</span>
+<span class="code-line">        <span class="code-keyword">if</span> (serialized == <span class="code-keyword">null</span>)</span>
+<span class="code-line">            <span class="code-keyword">return null</span>;</span>
+<span class="code-line">        </span>
+<span class="code-line">        <span class="code-keyword">return</span> <span class="code-function">DeserializeRow</span>((<span class="code-keyword">byte</span>[])serialized);</span>
+<span class="code-line">    }</span>
+<span class="code-line">    <span class="code-keyword">finally</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        _lock.<span class="code-function">ExitReadLock</span>();</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Look up a single row by its primary key.</p>
+              <p class="tl">Grab the <em>read</em> lock, not the write lock. Many other readers can be here at the same time.</p>
+              <p class="tl">Begin the protected region. As long as we are inside, the table's structure will not change underneath us.</p>
+              <p class="tl">Ask the index for the bytes that match this key.</p>
+              <p class="tl">If nothing was found, return nothing.</p>
+              <p class="tl">Otherwise, turn the bytes back into a row object and hand it to the caller.</p>
+              <p class="tl">Release the read lock. Once the last reader leaves, a waiting writer can finally enter.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="text-align: center; color: var(--color-text-secondary); margin-top: var(--space-6);"><strong>EnterWriteLock</strong> means "I need the door all to myself." <strong>EnterReadLock</strong> means "I will share." Picking the wrong one is either a correctness bug or a performance disaster.</p>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">🎚️</div>
+          <div class="callout-content">
+            <strong class="callout-title">Coarse vs fine-grained locking</strong>
+            <p>This engine locks whole tables at a time &mdash; simple, but means one writer blocks all readers of that table. Real databases use row-level or page-level locks to allow more parallelism, at the cost of much more complex code. That is the tradeoff <span class="term" data-definition="How big a piece the lock protects. Coarse-grained means one lock for a large area (whole table). Fine-grained means many small locks for small areas (single rows). Coarse is simple; fine is fast but fragile.">granularity</span> is all about.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SCREEN 4: Deadlock chat ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">When the Door Jams: A Deadlock Almost Happens</h2>
+        <p>Here is what happens when two threads forget the ordering rule. Thread A picks up Lock A, Thread B picks up Lock B, then each wants the other. Now nobody can move. This is the <span class="term" data-definition="Also called a race condition informally. A bug where the answer depends on exactly which thread ran first. The program seems fine until the day it spectacularly is not.">race condition</span> that every concurrent system has to defend against.</p>
+
+        <div class="chat-window" id="chat-locks">
+          <div class="chat-messages">
+            <div class="chat-message" data-msg="0" data-sender="thread-a">
+              <div class="chat-avatar" style="background: var(--color-actor-1)">A</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-1)">Thread-A &rarr; Lock-A</span>
+                <p>I have you.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="1" data-sender="thread-b" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">Thread-B &rarr; Lock-B</span>
+                <p>I have you.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="2" data-sender="thread-a" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-1)">A</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-1)">Thread-A &rarr; Lock-B</span>
+                <p>Now give me you too.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="3" data-sender="lock-b" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-4)">Lb</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-4)">Lock-B &rarr; Thread-A</span>
+                <p>I am held by B. Please wait.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="4" data-sender="thread-b" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">B</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">Thread-B &rarr; Lock-A</span>
+                <p>I need you too.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="5" data-sender="lock-a" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-5)">La</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-5)">Lock-A &rarr; Thread-B</span>
+                <p>I am held by A. Please wait.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="6" data-sender="narrator" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-text-secondary)">!</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-text-secondary)">Narrator</span>
+                <p>Nobody moves. Deadlock. The program will sit here forever unless someone reboots it.</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="7" data-sender="narrator" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-accent)">✓</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-accent)">Narrator</span>
+                <p>Fix: always acquire locks in the same global order. If both threads had asked for Lock-A first, one would have waited its turn and everything would flow.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-typing" id="chat-locks-typing" style="display:none">
+            <div class="chat-avatar" id="chat-locks-typing-avatar">?</div>
+            <div class="chat-typing-dots">
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+            </div>
+          </div>
+
+          <div class="chat-controls">
+            <button class="btn chat-next-btn">Next Message</button>
+            <button class="btn chat-all-btn">Play All</button>
+            <button class="btn chat-reset-btn">Replay</button>
+            <span class="chat-progress"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SCREEN 5: Spot the bug ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Spot the Bug</h2>
+        <p>Here is a method that grabs two of the five locks from our stack. It looks innocent. It even has a <code>try/finally</code>. But somewhere in here, the ordering rule is broken. If another thread is doing the usual 1 &rarr; 5 walk, the two can wedge against each other.</p>
+        <p>Click the line you think is wrong.</p>
+
+        <div class="bug-challenge">
+          <h3>Find the line that violates lock ordering:</h3>
+          <div class="bug-code">
+            <div class="bug-line" data-line="1" onclick="checkBugLine(this, false)">
+              <span class="line-num">1</span>
+              <code><span class="code-keyword">public void</span> <span class="code-function">Weird</span>()</code>
+            </div>
+            <div class="bug-line" data-line="2" onclick="checkBugLine(this, false)">
+              <span class="line-num">2</span>
+              <code>{</code>
+            </div>
+            <div class="bug-line" data-line="3" onclick="checkBugLine(this, false)">
+              <span class="line-num">3</span>
+              <code>    _cache.Lock.<span class="code-function">EnterWriteLock</span>();          <span class="code-comment">// level 5</span></code>
+            </div>
+            <div class="bug-line" data-line="4" onclick="checkBugLine(this, false)">
+              <span class="line-num">4</span>
+              <code>    <span class="code-keyword">try</span></code>
+            </div>
+            <div class="bug-line bug-target" data-line="5" onclick="checkBugLine(this, true)">
+              <span class="line-num">5</span>
+              <code>        _storage.Lock.<span class="code-function">EnterWriteLock</span>();    <span class="code-comment">// level 4</span></code>
+            </div>
+            <div class="bug-line" data-line="6" onclick="checkBugLine(this, false)">
+              <span class="line-num">6</span>
+              <code>        <span class="code-comment">// ...</span></code>
+            </div>
+            <div class="bug-line" data-line="7" onclick="checkBugLine(this, false)">
+              <span class="line-num">7</span>
+              <code>    <span class="code-keyword">finally</span> { _cache.Lock.<span class="code-function">ExitWriteLock</span>(); }</code>
+            </div>
+          </div>
+          <div class="bug-feedback" id="bug-feedback"></div>
+        </div>
+
+        <p style="margin-top: var(--space-8); color: var(--color-text-secondary); font-size: var(--text-sm); text-align: center; font-style: italic;">This exact shape of bug is how real production systems hang at 3 a.m. Knowing the lock order of your system is like knowing the emergency exits &mdash; rare to need, priceless when you do.</p>
+      </section>
+
+      <!-- ============ SCREEN 6: Quiz ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Check Your Understanding</h2>
+        <p>Four scenarios. No memorization &mdash; just use what you now know about doors, readers, writers, and lock ordering.</p>
+
+        <div class="quiz-container" id="quiz-module6">
+
+          <div class="quiz-question-block"
+               data-correct="opt-b"
+               data-explanation-right="Exactly. ReaderWriterLockSlim grants writers exclusive access, so a long write stalls every reader of that table until it finishes. This is the cost of coarse-grained locking."
+               data-explanation-wrong="Think about what changes when a slow writer is running. Reads are fast on their own &mdash; what would force them to wait?">
+            <h3 class="quiz-question">Reads are fast, but writes sometimes stall the whole table for seconds. What is most likely going on?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="opt-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The disk is full, so reads queue up.</span>
+              </button>
+              <button class="quiz-option" data-value="opt-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>A long-running writer is holding the table write lock, starving the readers until it finishes.</span>
+              </button>
+              <button class="quiz-option" data-value="opt-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The B+ Tree is too deep and every lookup is slow.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="opt-b"
+               data-explanation-right="Right. Two methods acquiring the same locks in different orders is the classic deadlock recipe. Check their lock order first &mdash; that is cheaper than any profiler."
+               data-explanation-wrong="CPU and memory look suspicious when something is slow, but a hang means something is waiting forever. What makes two threads wait on each other?">
+            <h3 class="quiz-question">The app hangs forever when two threads call <code>Method1</code> and <code>Method2</code> at the same time. What is the first thing to check?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="opt-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Whether the CPU is at 100 percent.</span>
+              </button>
+              <button class="quiz-option" data-value="opt-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Whether the two methods acquire their locks in different orders.</span>
+              </button>
+              <button class="quiz-option" data-value="opt-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Whether the database file is corrupted.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="opt-c"
+               data-explanation-right="Exactly. B+ Tree operations re-shape the tree (splits, re-linking). Letting readers roam the tree while its shape changes is dangerous, so a simple exclusive lock is both correct and easier to reason about."
+               data-explanation-wrong="Think about what actually happens during an insert into a B+ Tree. Would it be safe for a reader to wander through mid-split?">
+            <h3 class="quiz-question">Why does <code>BPlusTree</code> use a simple <code>lock(obj)</code> instead of <code>ReaderWriterLockSlim</code>?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="opt-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>ReaderWriterLockSlim is too slow for trees.</span>
+              </button>
+              <button class="quiz-option" data-value="opt-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Trees are read-only, so readers never conflict.</span>
+              </button>
+              <button class="quiz-option" data-value="opt-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Tree operations change the structure (splits, re-linking), so concurrent readers would see a half-rearranged tree. Exclusive locking is simpler and correct.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="opt-b"
+               data-explanation-right="Right. With deferred writes, the edit is buffered inside the transaction and only lands in the index on commit. Any other reader sees the pre-transaction state until then."
+               data-explanation-wrong="Think back to Module 5. What does the transaction actually do with your change before commit? Is it already in the index?">
+            <h3 class="quiz-question">You edit a row inside a transaction. Another thread calls <code>SelectAll()</code> before you commit. What does the other thread see?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="opt-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Your edit, immediately &mdash; there is only one database.</span>
+              </button>
+              <button class="quiz-option" data-value="opt-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The pre-transaction state. Your buffered change is not in the index yet; it only lands on commit.</span>
+              </button>
+              <button class="quiz-option" data-value="opt-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>An error, because two threads cannot touch the same table at once.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module6')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module6')">Try Again</button>
+        </div>
+
+        <p style="margin-top: var(--space-12); text-align: center; color: var(--color-text-muted); font-size: var(--text-sm); font-style: italic;">Next up &mdash; Module 7: Observability. Now that you know how it works, how do you see it working at runtime?</p>
+      </section>
+
+    </div>
+  </div>
+</section>

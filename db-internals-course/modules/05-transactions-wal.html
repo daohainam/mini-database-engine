@@ -1,0 +1,541 @@
+<section class="module" id="module-5" style="--color-accent: #0F766E; --color-accent-muted: #5EEAD4; --color-accent-light: #CCFBF1;">
+  <div class="module-content">
+
+    <header class="module-header animate-in">
+      <span class="module-number">05</span>
+      <h1 class="module-title">Transactions, WAL and Crash Recovery</h1>
+      <p class="module-subtitle">How databases survive a power cut without losing your money.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 1: Hook + Metaphor + ACID hero cards                  -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The airline check-in desk</h2>
+
+        <p>You hand the agent two tickets and a suitcase. Before anything gets stamped on your boarding passes, the agent writes every item into a thick official logbook, in order: "party of two, bag tagged, seats assigned." <em>Then</em> they print the passes. If the power cuts mid-check-in, the next agent in the morning reads the logbook and finishes only the check-ins marked "complete." Anything without a complete stamp is thrown out.</p>
+
+        <p>That is how airlines avoid losing your luggage — and it is exactly how databases avoid losing your money. In this module we meet the logbook: the <span class="term" data-definition="Write-Ahead Log. A durable append-only file on disk where a database records every intended change before actually applying it. If a crash happens, replaying the log restores the database to a correct state.">WAL</span>, and the rules that make a <span class="term" data-definition="A group of one or more operations that the database treats as a single unit — either all of them happen, or none of them do. Like moving money between two bank accounts: debit one, credit the other, no middle state.">transaction</span> either fully happen or fully vanish.</p>
+
+        <p>Imagine a bank transfer. You debit account A, then credit account B. What if the lights go out between those two steps? Without a transaction guarantee, account A is poorer and account B is no richer. Money just evaporates. The rules below exist so that never happens.</p>
+
+        <!-- HERO VISUAL: ACID pattern cards -->
+        <div class="pattern-cards" style="margin-top: var(--space-10);">
+          <div class="pattern-card" style="border-left: 4px solid var(--color-actor-1);">
+            <div class="pattern-icon" style="background: var(--color-actor-1)">A</div>
+            <h4 class="pattern-title">Atomicity</h4>
+            <p class="pattern-desc">All or nothing. Never half-done.</p>
+          </div>
+          <div class="pattern-card" style="border-left: 4px solid var(--color-actor-2);">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">C</div>
+            <h4 class="pattern-title">Consistency</h4>
+            <p class="pattern-desc">Invariants (like "total balance does not change") hold before and after.</p>
+          </div>
+          <div class="pattern-card" style="border-left: 4px solid var(--color-actor-3);">
+            <div class="pattern-icon" style="background: var(--color-actor-3)">I</div>
+            <h4 class="pattern-title">Isolation</h4>
+            <p class="pattern-desc">Concurrent transactions look like they ran one at a time.</p>
+          </div>
+          <div class="pattern-card" style="border-left: 4px solid var(--color-actor-4);">
+            <div class="pattern-icon" style="background: var(--color-actor-4)">D</div>
+            <h4 class="pattern-title">Durability</h4>
+            <p class="pattern-desc">Committed means committed, even if the server explodes.</p>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-8); color: var(--color-text-secondary); font-size: var(--text-sm); text-align: center;">Together these four letters spell <span class="term" data-definition="ACID stands for Atomicity, Consistency, Isolation, Durability. It is the classic checklist of guarantees a transactional database must provide. Get all four and your data is safe; miss one and surprises leak in.">ACID</span> — the checklist every serious database must pass.</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 2: The core invariant + group chat                    -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Log first, apply after</h2>
+
+        <p>Here is the one rule that powers everything in this module. When a transaction wants to change data, the database does not touch the real data first. It writes the intended change into the <span class="term" data-definition="Write-Ahead Log. A durable append-only file on disk where a database records every intended change before actually applying it. If a crash happens, replaying the log restores the database to a correct state.">WAL</span> on disk, forces that log to be durable, <em>and only then</em> applies the change. Log first, apply after.</p>
+
+        <p>Flip that order and you get corruption. Apply first and hope to log later? If the crash lands between those two steps, the change is on disk but the log does not know, so recovery will never replay or undo it. The whole system is built to avoid that gap.</p>
+
+        <p>Watch a real transaction trickle through the engine. Four characters: <strong>User</strong> (the client), <strong>Transaction</strong> (the bookkeeper), <strong>WAL</strong> (the logbook on disk), and <strong>BPlusTree</strong> (where the rows actually live).</p>
+
+        <!-- GROUP CHAT -->
+        <div class="chat-window" id="chat-wal">
+          <div class="chat-messages">
+            <div class="chat-message" data-msg="0" data-sender="user">
+              <div class="chat-avatar" style="background: var(--color-actor-1)">U</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-1)">User</span>
+                <p>begin</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="1" data-sender="transaction" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">T</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">Transaction</span>
+                <p>BEGIN txn 42</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="2" data-sender="user" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-1)">U</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-1)">User</span>
+                <p>insert row Alice</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="3" data-sender="transaction" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">T</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">Transaction</span>
+                <p>append INSERT entry for txn 42</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="4" data-sender="user" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-1)">U</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-1)">User</span>
+                <p>commit</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="5" data-sender="transaction" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">T</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">Transaction</span>
+                <p>append COMMIT marker, then FLUSH to disk</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="6" data-sender="wal" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-3)">W</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-3)">WAL</span>
+                <p>durable on disk &mdash; safe</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="7" data-sender="transaction" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">T</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">Transaction</span>
+                <p>now apply the buffered INSERT to the index</p>
+              </div>
+            </div>
+            <div class="chat-message" data-msg="8" data-sender="transaction" style="display:none">
+              <div class="chat-avatar" style="background: var(--color-actor-2)">T</div>
+              <div class="chat-bubble">
+                <span class="chat-sender" style="color: var(--color-actor-2)">Transaction</span>
+                <p>committed</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-typing" id="chat-wal-typing" style="display:none">
+            <div class="chat-avatar" id="chat-wal-typing-avatar">?</div>
+            <div class="chat-typing-dots">
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+            </div>
+          </div>
+
+          <div class="chat-controls">
+            <button class="btn chat-next-btn">Next Message</button>
+            <button class="btn chat-all-btn">Play All</button>
+            <button class="btn chat-reset-btn">Replay</button>
+            <span class="chat-progress"></span>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">!</div>
+          <div class="callout-content">
+            <strong class="callout-title">Log first, apply after is ACID's beating heart.</strong>
+            <p>If the commit record is on disk, recovery will replay the change. If not, it never happened. There is no third state.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 3: What goes in the logbook (WALEntry shape)          -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Inside a logbook entry</h2>
+
+        <p>Every row in the logbook is a <code>WALEntry</code>. One entry per operation: "transaction 42 inserted Alice," "transaction 42 committed," and so on. The fields are chosen so recovery has everything it needs — the old value to <span class="term" data-definition="Undo means reversing a change that was applied, using the old value that was saved before the change. This engine rarely needs to undo because it buffers writes until commit.">undo</span>, the new value to <span class="term" data-definition="Redo means re-applying a change from the log after a crash, using the new value that was recorded. Recovery replays committed redo records to bring the database back up to date.">redo</span>, and a sequence number so we know the exact order things happened.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line"><span class="code-keyword">public class</span> <span class="code-function">WALEntry</span></span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">private const int</span> MaxCheckpointActiveTransactionCount = 100_000;</span>
+<span class="code-line">    <span class="code-keyword">private const int</span> MaxStringByteLength = 64 * 1024;</span>
+<span class="code-line">    <span class="code-keyword">private const int</span> MaxValueLength = 1024 * 1024;</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">public long</span> TransactionId { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public</span> WALOperationType OperationType { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public string</span> TableName { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; } = <span class="code-keyword">string</span>.Empty;</span>
+<span class="code-line">    <span class="code-keyword">public object</span>? Key { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public byte</span>[]? OldValue { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public byte</span>[]? NewValue { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public long</span> Timestamp { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public long</span> SequenceNumber { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public</span> List&lt;<span class="code-keyword">long</span>&gt; CheckpointActiveTransactionIds { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; } = <span class="code-keyword">new</span>();</span>
+<span class="code-line">    <span class="code-keyword">public long</span> CheckpointNextTransactionId { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">One entry in the logbook. Every write the database wants to do shows up here first.</p>
+              <p class="tl">Safety caps so a single entry can never bloat the log and break recovery.</p>
+              <p class="tl"><strong>Who</strong> did it &mdash; which transaction this entry belongs to.</p>
+              <p class="tl"><strong>What kind</strong> of event: Begin, Insert, Update, Delete, Commit, Rollback, or Checkpoint.</p>
+              <p class="tl">Which table and which row (the key) the change affects.</p>
+              <p class="tl"><strong>OldValue</strong> + <strong>NewValue</strong> together are the magic: old lets us <em>undo</em>, new lets us <em>redo</em>.</p>
+              <p class="tl">A clock stamp and a <strong>SequenceNumber</strong> giving every entry a total order &mdash; crucial for replay.</p>
+              <p class="tl">Bookkeeping for <span class="term" data-definition="A checkpoint is a periodic snapshot recorded in the WAL that says which transactions were still active at that moment. It lets recovery skip ahead instead of replaying the entire log from the beginning.">checkpoints</span> &mdash; the subject of a later screen.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 4: Commit + LogInsert deferred writes                 -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The moment of commit</h2>
+
+        <p>A <span class="term" data-definition="Commit is the act of finalizing a transaction. Once committed, the changes are promised to survive crashes. In this engine, commit means: write a commit marker to the WAL, flush it to disk, then apply the buffered writes to the index.">commit</span> is not a switch. It is a three-step dance: write the commit marker, <span class="term" data-definition="Flush means force buffered data out of memory and onto the physical disk. Until a flush succeeds, data still sitting in OS buffers can vanish in a power loss.">flush</span> the <span class="term" data-definition="Write-Ahead Log. A durable append-only file on disk where a database records every intended change before actually applying it. If a crash happens, replaying the log restores the database to a correct state.">WAL</span> to disk, then apply. The line between "might lose this" and "definitely safe" is a single call to <code>Flush()</code>.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line"><span class="code-keyword">public void</span> <span class="code-function">Commit</span>()</span>
+<span class="code-line">{</span>
+<span class="code-line">    _lock.EnterWriteLock();</span>
+<span class="code-line">    <span class="code-keyword">try</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">if</span> (_state != TransactionState.Active)</span>
+<span class="code-line">            <span class="code-keyword">throw new</span> InvalidOperationException($<span class="code-string">"Cannot commit transaction in state: {_state}"</span>);</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-comment">// Log the commit</span></span>
+<span class="code-line">        _walManager.AppendEntry(<span class="code-keyword">new</span> WALEntry</span>
+<span class="code-line">        {</span>
+<span class="code-line">            TransactionId = _transactionId,</span>
+<span class="code-line">            OperationType = WALOperationType.Commit</span>
+<span class="code-line">        });</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-comment">// Force flush to ensure durability</span></span>
+<span class="code-line">        _walManager.Flush();</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-comment">// Apply buffered writes only after WAL commit is durable.</span></span>
+<span class="code-line">        _commitApplyCallback(_entries);</span>
+<span class="code-line"></span>
+<span class="code-line">        _state = TransactionState.Committed;</span>
+<span class="code-line">        _transactionManager.CompleteTransaction(_transactionId);</span>
+<span class="code-line">    }</span>
+<span class="code-line">    <span class="code-keyword">finally</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        _lock.ExitWriteLock();</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Someone called <code>commit()</code>. Grab the write lock so nobody else meddles while we finalize.</p>
+              <p class="tl">Sanity check: you can only commit a transaction that is still <em>Active</em> &mdash; no double-committing.</p>
+              <p class="tl"><strong>Step 1 &mdash; log.</strong> Append a Commit marker to the WAL: "txn 42 is done."</p>
+              <p class="tl"><strong>Step 2 &mdash; flush.</strong> This is the ACID-defining moment. <code>Flush()</code> forces the log to physical disk. If we crash after this line, recovery will replay the transaction.</p>
+              <p class="tl"><strong>Step 3 &mdash; apply.</strong> <em>Only now</em> do we push the buffered inserts and updates into the real B+Tree.</p>
+              <p class="tl">Mark the transaction Committed and tell the manager we are done. Release the lock.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-warning">
+          <div class="callout-icon">!</div>
+          <div class="callout-content">
+            <strong class="callout-title">Deferred writes.</strong>
+            <p>This engine does <strong>not</strong> apply changes to the B+Tree until after commit &mdash; every <code>Insert</code>, <code>Update</code>, and <code>Delete</code> is buffered inside the transaction. That makes <span class="term" data-definition="Rollback aborts a transaction and discards all of its changes. With deferred writes, rollback is trivial — there is nothing applied yet to undo.">rollback</span> almost free: there is nothing to undo. The tradeoff: other transactions cannot see your in-flight writes.</p>
+          </div>
+        </div>
+
+        <p style="text-align:center; font-style: italic; color: var(--color-text-secondary); margin-top: var(--space-8);">Say it once more: <strong>log first, apply after.</strong></p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 5: Crash recovery                                      -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Morning after the crash</h2>
+
+        <p>A crash happens. Half-written transactions, maybe a commit marker that made it to disk, maybe one that didn't. The next time the engine boots, it runs <code>RecoverFromWAL</code>: read the whole logbook, bucket entries by transaction, replay only the buckets with a Commit marker, throw the rest away.</p>
+
+        <!-- FLOW ANIMATION — NO apostrophes inside labels -->
+        <div class="flow-animation" data-steps='[
+          {"highlight":"flow-actor-1","label":"Process starts. Look for a WAL file on disk."},
+          {"highlight":"flow-actor-2","label":"Read every entry from the log into memory.","packet":true,"from":"actor-1","to":"actor-2"},
+          {"highlight":"flow-actor-3","label":"Bucket entries by transaction id.","packet":true,"from":"actor-2","to":"actor-3"},
+          {"highlight":"flow-actor-3","label":"Find buckets that end in a Commit marker."},
+          {"highlight":"flow-actor-4","label":"Replay committed inserts, updates and deletes onto the B+Tree.","packet":true,"from":"actor-3","to":"actor-4"},
+          {"highlight":"flow-actor-3","label":"Uncommitted transactions are dropped silently."},
+          {"highlight":"flow-actor-4","label":"Done. Database resumes normal operation."}
+        ]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon" style="background: var(--color-actor-1)">L</div>
+              <span>Disk / WAL file</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon" style="background: var(--color-actor-2)">R</div>
+              <span>Recovery Reader</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon" style="background: var(--color-actor-3)">B</div>
+              <span>Transaction Buckets</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-4">
+              <div class="flow-actor-icon" style="background: var(--color-actor-4)">T</div>
+              <span>B+Tree</span>
+            </div>
+          </div>
+
+          <div class="flow-packet" id="flow-packet"></div>
+
+          <div class="flow-step-label" id="flow-label">Click "Next Step" to walk through recovery</div>
+
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-10);">Here is the recovery code, stripped of its error handling. Notice how simple the rule is: if there is a Commit entry, replay; otherwise, ignore.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line"><span class="code-keyword">public void</span> <span class="code-function">RecoverFromWAL</span>(Action&lt;WALEntry&gt; applyEntry)</span>
+<span class="code-line">{</span>
+<span class="code-line">    _lock.EnterWriteLock();</span>
+<span class="code-line">    <span class="code-keyword">try</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">var</span> entries = _walManager.ReadEntriesForRecovery();</span>
+<span class="code-line">        <span class="code-keyword">var</span> transactions = <span class="code-keyword">new</span> Dictionary&lt;<span class="code-keyword">long</span>, List&lt;WALEntry&gt;&gt;();</span>
+<span class="code-line">        <span class="code-keyword">var</span> committedTransactions = <span class="code-keyword">new</span> HashSet&lt;<span class="code-keyword">long</span>&gt;();</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">foreach</span> (<span class="code-keyword">var</span> entry <span class="code-keyword">in</span> entries)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            <span class="code-keyword">if</span> (entry.OperationType == WALOperationType.Checkpoint) <span class="code-keyword">continue</span>;</span>
+<span class="code-line"></span>
+<span class="code-line">            <span class="code-keyword">if</span> (entry.OperationType == WALOperationType.Commit)</span>
+<span class="code-line">                committedTransactions.Add(entry.TransactionId);</span>
+<span class="code-line">            <span class="code-keyword">else if</span> (entry.OperationType == WALOperationType.Rollback)</span>
+<span class="code-line">                <span class="code-keyword">continue</span>;</span>
+<span class="code-line">            <span class="code-keyword">else if</span> (entry.OperationType != WALOperationType.BeginTransaction)</span>
+<span class="code-line">            {</span>
+<span class="code-line">                <span class="code-keyword">if</span> (!transactions.ContainsKey(entry.TransactionId))</span>
+<span class="code-line">                    transactions[entry.TransactionId] = <span class="code-keyword">new</span> List&lt;WALEntry&gt;();</span>
+<span class="code-line">                transactions[entry.TransactionId].Add(entry);</span>
+<span class="code-line">            }</span>
+<span class="code-line">        }</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">foreach</span> (<span class="code-keyword">var</span> txnId <span class="code-keyword">in</span> committedTransactions)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            <span class="code-keyword">if</span> (transactions.TryGetValue(txnId, <span class="code-keyword">out var</span> txnEntries))</span>
+<span class="code-line">            {</span>
+<span class="code-line">                <span class="code-keyword">foreach</span> (<span class="code-keyword">var</span> entry <span class="code-keyword">in</span> txnEntries)</span>
+<span class="code-line">                    applyEntry(entry);</span>
+<span class="code-line">            }</span>
+<span class="code-line">        }</span>
+<span class="code-line">    }</span>
+<span class="code-line">    <span class="code-keyword">finally</span> { _lock.ExitWriteLock(); }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Take exclusive control of the log &mdash; nobody else is allowed to write during recovery.</p>
+              <p class="tl">Read every entry the logbook has to offer.</p>
+              <p class="tl">Prepare two containers: one bucket per transaction, plus a set of transaction ids that successfully committed.</p>
+              <p class="tl">Walk through the log. Skip Checkpoint entries (they are hints, not changes).</p>
+              <p class="tl">If we see a Commit, mark that transaction as "yes, finish this one."</p>
+              <p class="tl">Rollback entries and BeginTransaction entries have no data to replay &mdash; skip them.</p>
+              <p class="tl">For every actual change (Insert, Update, Delete), drop it into its transaction bucket.</p>
+              <p class="tl"><strong>Now the payoff.</strong> Loop over only the committed transaction ids, and replay every entry in those buckets onto the index.</p>
+              <p class="tl">Everything else &mdash; half-finished transactions without a commit &mdash; is silently thrown away. That is <span class="term" data-definition="Atomicity is the A in ACID. A transaction either fully happens or fully vanishes; there is no half-way state visible to anyone.">atomicity</span> in action.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="text-align:center; font-style:italic; color: var(--color-text-secondary); margin-top: var(--space-8);">The mantra again: <strong>log first, apply after.</strong> Recovery only trusts what was logged.</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 6: Checkpoint + Quiz                                   -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Keeping the logbook lean</h2>
+
+        <p>If the WAL grew forever, recovery would take forever too. So the engine periodically takes a <span class="term" data-definition="A checkpoint is a periodic snapshot recorded in the WAL that says which transactions were still active at that moment. It lets recovery skip ahead instead of replaying the entire log from the beginning.">checkpoint</span>: flush all dirty in-memory pages to disk, write a special Checkpoint WAL entry, and truncate the oldest part of the log. The logbook starts fresh from a known-good moment.</p>
+
+        <div class="step-cards">
+          <div class="step-card">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <strong>Flush all dirty pages</strong>
+              <p>Every page that has changes in memory gets written out to disk, via <code>fsync</code>, so the on-disk B+Tree matches what committed transactions say it should.</p>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <strong>Write a Checkpoint WAL entry</strong>
+              <p>It lists the transactions that were still active at this instant (<code>CheckpointActiveTransactionIds</code>) and the next id the engine will hand out.</p>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <strong>Truncate old WAL</strong>
+              <p>Everything before the checkpoint is provably already on disk in the B+Tree &mdash; safe to forget.</p>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <strong>Smaller WAL means faster recovery next time</strong>
+              <p>Replay starts at the latest checkpoint instead of the dawn of time. Restart time stays bounded no matter how long the database has been running.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-10); font-style: italic; text-align: center; color: var(--color-text-secondary);">Checkpoints, deferred writes, and the commit dance all rest on the same foundation: <strong>log first, apply after.</strong></p>
+
+        <h2 class="screen-heading" style="margin-top: var(--space-12);">Think it through</h2>
+
+        <p>Four scenarios. Pick the answer a seasoned database engineer would give. The explanations are where the real learning happens &mdash; read them even when you are right.</p>
+
+        <div class="quiz-container" id="quiz-module5">
+
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario 1 &mdash; Crash after commit, before apply</span>
+              <p>Power cuts <em>after</em> the commit record is written to the WAL but <em>before</em> the index is updated. On restart, is the inserted row there?</p>
+            </div>
+            <div class="quiz-question-block"
+                 data-correct="yes"
+                 data-explanation-right="Exactly. The WAL is the source of truth. Recovery sees the Commit marker, replays the buffered Insert onto the B+Tree, and the row appears as if nothing went wrong. Log first, apply after &mdash; the log had it, so it survives."
+                 data-explanation-wrong="Not quite. Because the commit marker made it to disk before the crash, recovery treats that transaction as committed and replays its entries onto the index. The row shows up after restart.">
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="yes" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Yes &mdash; recovery will replay the committed entries onto the index.</span>
+                </button>
+                <button class="quiz-option" data-value="no" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>No &mdash; the index never got the write, so the row is gone.</span>
+                </button>
+                <button class="quiz-option" data-value="maybe" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Only if checkpointing was running at the time.</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+          </div>
+
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario 2 &mdash; Crash between two inserts, before commit</span>
+              <p>A transaction inserts row A, then inserts row B, and the power cuts before <code>commit()</code> is called. What does the database look like after restart?</p>
+            </div>
+            <div class="quiz-question-block"
+                 data-correct="both-gone"
+                 data-explanation-right="Right. No Commit marker was ever written for that transaction, so recovery puts its id in the transaction buckets but never in the committed set. Both inserts are discarded silently. Atomicity preserved &mdash; all or nothing."
+                 data-explanation-wrong="Not quite. Without a Commit marker in the WAL, recovery does not consider that transaction committed. It discards everything in the transaction bucket, including row A. Both inserts vanish together &mdash; that is atomicity.">
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="a-only" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Row A is present, row B is gone.</span>
+                </button>
+                <button class="quiz-option" data-value="both-gone" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Both inserts are discarded &mdash; the transaction never committed.</span>
+                </button>
+                <button class="quiz-option" data-value="both-there" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Both rows are there because they were logged.</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+          </div>
+
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario 3 &mdash; A stress test loses committed data</span>
+              <p>Your colleague says: "After a kill -9 mid-test, we are missing rows that the client got a committed response for." Where do you look first?</p>
+            </div>
+            <div class="quiz-question-block"
+                 data-correct="flush-missing"
+                 data-explanation-right="Exactly. Durability is whatever happens between the commit append and the apply callback. If <code>Flush()</code> is skipped, the OS may have the commit marker only in its page cache &mdash; a crash wipes it, and recovery has no evidence the transaction happened. Start with that call."
+                 data-explanation-wrong="Close, but the first place to look is whether <code>_walManager.Flush()</code> actually runs before the apply callback. Durability depends on that fsync. Missing checkpoint logic or a slow B+Tree would cause different symptoms.">
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="flush-missing" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Is <code>_walManager.Flush()</code> being called before the apply callback? Durability lives on that line.</span>
+                </button>
+                <button class="quiz-option" data-value="checkpoint" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>Checkpoints probably ran too often and truncated the commit marker.</span>
+                </button>
+                <button class="quiz-option" data-value="btree-slow" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>The B+Tree is too slow to apply writes before the crash.</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+          </div>
+
+          <div class="scenario-block">
+            <div class="scenario-context">
+              <span class="scenario-label">Scenario 4 &mdash; Why is rollback free?</span>
+              <p>A junior engineer asks: "For rollback, where is the code that undoes the B+Tree changes?" What do you tell them?</p>
+            </div>
+            <div class="quiz-question-block"
+                 data-correct="deferred"
+                 data-explanation-right="Exactly. Because of <span class='term' data-definition='Deferred writes means changes are buffered inside the transaction and not applied to the real index until commit succeeds.'>deferred writes</span>, changes only touch the B+Tree after a successful commit. Rollback just drops the buffered entries &mdash; there is nothing applied to undo. Elegant, and much simpler than the alternative."
+                 data-explanation-wrong="Not quite. This engine buffers writes inside the transaction and only applies them to the B+Tree after commit. So rollback has nothing applied to reverse &mdash; it just throws the buffer away. That is the whole reason OldValue is rarely used here.">
+              <div class="quiz-options">
+                <button class="quiz-option" data-value="oldvalue" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>It reads <code>OldValue</code> from each WAL entry and writes it back to the B+Tree.</span>
+                </button>
+                <button class="quiz-option" data-value="deferred" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>There is nothing to undo &mdash; changes are deferred until commit, so rollback just drops the buffer.</span>
+                </button>
+                <button class="quiz-option" data-value="checkpoint-undo" onclick="selectOption(this)">
+                  <div class="quiz-option-radio"></div>
+                  <span>The latest checkpoint is restored, rolling the whole engine back.</span>
+                </button>
+              </div>
+              <div class="quiz-feedback"></div>
+            </div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module5')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module5')">Try Again</button>
+        </div>
+
+        <p style="margin-top: var(--space-12); text-align:center; color: var(--color-text-secondary);">Next module: <strong>Concurrency</strong>. Multiple transactions at once &mdash; how does the engine keep them from stepping on each other?</p>
+
+      </section>
+
+    </div>
+  </div>
+</section>

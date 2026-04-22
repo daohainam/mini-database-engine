@@ -1,0 +1,379 @@
+<section class="module" id="module-4" style="background: var(--color-bg)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">04</span>
+      <h1 class="module-title">Indexes &amp; the Query Plan</h1>
+      <p class="module-subtitle">How the database turns your LINQ into a route — and why the same question can be fast or slow.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- SCREEN 1: Hook + GPS metaphor + hero visual -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The GPS route planner inside your database</h2>
+        <p>Ask your phone for directions to the airport. It doesn't try every street — it peeks at your request, notices "highway only," and picks an efficient route. Your database does the same thing with a <span class="term" data-definition="A query is a request written in a language like SQL or LINQ that asks the database for specific data — like asking a librarian for a particular book rather than browsing every shelf.">query</span>.</p>
+        <p>You write <span class="term" data-definition="LINQ (Language-Integrated Query) is a way to write database-style queries directly in C#. Instead of a separate SQL string, you use familiar C# syntax like .Where() and .OrderBy() — the compiler understands them as queries.">LINQ</span> like <code>.Where(r =&gt; r["Id"] == 42)</code>. Before a single row is touched, a planner inspects your request and picks a strategy. That strategy is the <span class="term" data-definition="A query plan is the database's chosen strategy for answering a query — which data to touch, in what order, and how to filter it. Same question, different plans, wildly different speed.">query plan</span>, and it decides whether your query runs in milliseconds or minutes.</p>
+
+        <div class="pattern-cards stagger-children">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">1</div>
+            <h4 class="pattern-title">LINQ you wrote</h4>
+            <p class="pattern-desc"><code>.Where(r =&gt; (int)r["Id"] == 42)</code></p>
+            <p class="pattern-desc" style="margin-top: var(--space-2); font-style: italic;">"Give me the user with Id 42."</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-accent)">
+            <div class="pattern-icon" style="background: var(--color-accent)">2</div>
+            <h4 class="pattern-title">Access path chosen</h4>
+            <p class="pattern-desc"><strong>Index <span class="term" data-definition="A point lookup fetches exactly one row by its unique key — like flipping straight to page 137 of a book using the index, instead of turning every page.">point lookup</span></strong></p>
+            <p class="pattern-desc" style="margin-top: var(--space-2); font-family: var(--font-mono); font-size: var(--text-xs);">SelectByKey(42)</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-success)">
+            <div class="pattern-icon" style="background: var(--color-success)">3</div>
+            <h4 class="pattern-title">Cost</h4>
+            <p class="pattern-desc"><strong>O(log n)</strong></p>
+            <p class="pattern-desc" style="margin-top: var(--space-2);">One tree descent. Lightning fast, even at 10 million rows.</p>
+          </div>
+        </div>
+
+        <div style="margin-top: var(--space-8);">
+          <h3 style="font-family: var(--font-display); font-size: var(--text-lg); color: var(--color-text-secondary); margin-bottom: var(--space-4);">The same planner, three different routes</h3>
+          <div class="pattern-cards stagger-children">
+            <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-success)">
+              <div class="pattern-icon" style="background: var(--color-success)">=</div>
+              <h4 class="pattern-title">Equality on Id</h4>
+              <p class="pattern-desc" style="font-family: var(--font-mono); font-size: var(--text-xs);">.Where(r =&gt; (int)r["Id"] == 42)</p>
+              <p class="pattern-desc" style="margin-top: var(--space-3);"><strong>Index point lookup</strong> — jumps straight to the row. <strong>O(log n)</strong>.</p>
+            </div>
+            <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-info)">
+              <div class="pattern-icon" style="background: var(--color-info)">&gt;</div>
+              <h4 class="pattern-title">Range on Id</h4>
+              <p class="pattern-desc" style="font-family: var(--font-mono); font-size: var(--text-xs);">.Where(r =&gt; (int)r["Id"] &gt; 100)</p>
+              <p class="pattern-desc" style="margin-top: var(--space-3);"><strong><span class="term" data-definition="A range scan walks along the sorted leaves of the index to return every row in a given key range — like reading every dictionary entry from 'M' to 'P' without scanning A–L or Q–Z.">Index range scan</span></strong> — finds the start, then walks the leaves. <strong>O(log n + k)</strong>.</p>
+            </div>
+            <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-error)">
+              <div class="pattern-icon" style="background: var(--color-error)">?</div>
+              <h4 class="pattern-title">Filter on Name</h4>
+              <p class="pattern-desc" style="font-family: var(--font-mono); font-size: var(--text-xs);">.Where(r =&gt; (string)r["Name"] == "Alice")</p>
+              <p class="pattern-desc" style="margin-top: var(--space-3);"><strong><span class="term" data-definition="A full scan reads every single row in the table and filters them in memory. Unavoidable when no index helps — and slow on large tables.">Full table scan</span></strong> + filter. <strong>O(n)</strong>. No index on Name, so every row must be checked.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent" style="margin-top: var(--space-8);">
+          <div class="callout-icon">!</div>
+          <div class="callout-content">
+            <strong class="callout-title">Declarative vs imperative</strong>
+            <p>LINQ describes <em>what</em> you want; the planner figures out <em>how</em>. This is the single biggest reason databases are productive — you don't hand-code loops. You say "give me users where Id = 42" and the planner quietly picks between a one-jump index lookup and a million-row scan.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 2: Execute — the three phases -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The three phases of Execute</h2>
+        <p>When you call <code>.ToList()</code> on a LINQ query, the engine runs the <code>Execute</code> method. Think of it as the GPS running three steps: <strong>pick a door</strong>, <strong>filter what comes through</strong>, and <strong>sort what's left</strong>.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">public</span> TResult <span class="code-function">Execute</span>&lt;TResult&gt;(Expression expression)</span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">var</span> plan = <span class="code-function">BuildExecutionPlan</span>(expression);</span>
+<span class="code-line">    IEnumerable&lt;DataRow&gt; rows = <span class="code-function">ExecuteAccessPath</span>(plan);</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">foreach</span> (<span class="code-keyword">var</span> predicate <span class="code-keyword">in</span> plan.Predicates)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        rows = rows.<span class="code-function">Where</span>(predicate);</span>
+<span class="code-line">    }</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">if</span> (plan.OrderByColumn != <span class="code-keyword">null</span>)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">if</span> (plan.IsOrderByDescending)</span>
+<span class="code-line">            rows = rows.<span class="code-function">OrderByDescending</span>(r =&gt; r[plan.OrderByColumn]);</span>
+<span class="code-line">        <span class="code-keyword">else</span></span>
+<span class="code-line">            rows = rows.<span class="code-function">OrderBy</span>(r =&gt; r[plan.OrderByColumn]);</span>
+<span class="code-line">    }</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">return</span> (TResult)(<span class="code-keyword">object</span>)rows;</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Read the user's request and build a plan — like reading an address before picking a route.</p>
+              <p class="tl">Phase 1: <strong>pick a door</strong>. Run the chosen access path (index jump, range walk, or full scan) to get a starting stream of rows.</p>
+              <p class="tl">Phase 2: <strong>filter what comes through</strong>. For any condition the index couldn't handle, check each row in memory.</p>
+              <p class="tl">Phase 3: <strong>sort what's left</strong>. If the user asked for an order, shuffle the survivors into the right sequence.</p>
+              <p class="tl">Hand back the resulting stream of rows to the caller — lazy, ready to iterate.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-6);">Notice the order: <strong>access path first, filters second, sort last</strong>. Sorting always happens in memory over whatever survived the filters. That's why <span class="term" data-definition="ORDER BY is a clause that tells the database to return results in a specific order (ascending or descending) by some column — like asking a librarian to hand you books sorted by publication date.">ORDER BY</span> never speeds up a query — it can only slow it down.</p>
+      </section>
+
+      <!-- SCREEN 3: ExecuteAccessPath — the if ladder -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Picking the door: ExecuteAccessPath</h2>
+        <p>This is the heart of the planner. A short <span class="term" data-definition="A predicate is a condition that a row must satisfy — typically a boolean expression like 'Id equals 42'. The planner inspects predicates to decide which can use an index.">predicate</span>-sniffing ladder decides whether your query jumps, walks, or scans.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">private</span> IEnumerable&lt;DataRow&gt; <span class="code-function">ExecuteAccessPath</span>(QueryExecutionPlan plan)</span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">if</span> (!<span class="code-keyword">string</span>.IsNullOrEmpty(_primaryKeyColumn) &amp;&amp; plan.IndexRange != <span class="code-keyword">null</span>)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">if</span> (plan.IndexRange.ExactKey != <span class="code-keyword">null</span>)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            <span class="code-keyword">var</span> single = _table.<span class="code-function">SelectByKey</span>(plan.IndexRange.ExactKey);</span>
+<span class="code-line">            <span class="code-keyword">return</span> single != <span class="code-keyword">null</span> ? <span class="code-keyword">new</span> List&lt;DataRow&gt; { single } : <span class="code-keyword">new</span> List&lt;DataRow&gt;();</span>
+<span class="code-line">        }</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">if</span> (plan.IndexRange.HasLowerBound || plan.IndexRange.HasUpperBound)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            <span class="code-keyword">return</span> _table.<span class="code-function">SelectByPrimaryKeyRange</span>(plan.IndexRange.LowerBound, plan.IndexRange.UpperBound);</span>
+<span class="code-line">        }</span>
+<span class="code-line">    }</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">return</span> _table.<span class="code-function">SelectAll</span>();</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Start of the if-ladder. First: do we even have an index on the primary key, and did the visitor spot an index-friendly filter?</p>
+              <p class="tl"><strong>Exact key?</strong> Best case. One jump into the index and we're done.</p>
+              <p class="tl">Return a list of exactly one row, or an empty list if nothing matched. No scanning, no filtering, no wasted effort.</p>
+              <p class="tl"><strong>Range?</strong> Second best. The filter is something like Id &gt; 100 or Id BETWEEN 10 AND 20.</p>
+              <p class="tl">Walk the sorted leaves of the index from the lower bound to the upper bound. Still way faster than a full scan.</p>
+              <p class="tl"><strong>Neither?</strong> Fallback. Read every row in the table and let later phases filter them in memory.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-6);">Read it top-down: <em>exact key? one jump. range? leaf-walk. neither? full scan.</em> That's the whole planner — three lines of real decision-making sitting on top of a B+ tree.</p>
+      </section>
+
+      <!-- SCREEN 4: SelectByKey + Layer toggle -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Where the plan meets the tree</h2>
+        <p>When the plan picks "exact key," control lands on <code>SelectByKey</code> — the point where the LINQ layer finally calls into the B+ tree you built in Module 3.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">public</span> DataRow? <span class="code-function">SelectByKey</span>(<span class="code-keyword">object</span> key)</span>
+<span class="code-line">{</span>
+<span class="code-line">    _lock.<span class="code-function">EnterReadLock</span>();</span>
+<span class="code-line">    <span class="code-keyword">try</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">var</span> serialized = _index.<span class="code-function">Search</span>(key);</span>
+<span class="code-line">        <span class="code-keyword">if</span> (serialized == <span class="code-keyword">null</span>)</span>
+<span class="code-line">            <span class="code-keyword">return</span> <span class="code-keyword">null</span>;</span>
+<span class="code-line">        </span>
+<span class="code-line">        <span class="code-keyword">return</span> <span class="code-function">DeserializeRow</span>((<span class="code-keyword">byte</span>[])serialized);</span>
+<span class="code-line">    }</span>
+<span class="code-line">    <span class="code-keyword">finally</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        _lock.<span class="code-function">ExitReadLock</span>();</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Grab a read lock so other readers can come along, but writers must wait their turn.</p>
+              <p class="tl">Ask the B+ tree index to search for this key. One descent from root to leaf.</p>
+              <p class="tl">Nothing found? Return null — the caller turns that into an empty result.</p>
+              <p class="tl">Found! Turn the stored bytes back into a row the caller can use.</p>
+              <p class="tl">Whatever happened, release the read lock before leaving.</p>
+            </div>
+          </div>
+        </div>
+
+        <h3 style="font-family: var(--font-display); font-size: var(--text-xl); margin-top: var(--space-10); margin-bottom: var(--space-4);">Three views of the same query</h3>
+        <p>Watch how <em>what you wrote</em> becomes <em>a plan object</em> becomes <em>a method call on Table</em>. Click each tab:</p>
+
+        <div class="layer-demo">
+          <div class="layer-tabs">
+            <button class="layer-tab active" onclick="showLayer('linq')">1. LINQ source</button>
+            <button class="layer-tab" onclick="showLayer('plan')">2. Plan object</button>
+            <button class="layer-tab" onclick="showLayer('ops')">3. Physical ops</button>
+          </div>
+          <div class="layer-viewport">
+            <div class="layer" id="layer-linq" style="display:block">
+<pre><code><span class="code-comment">// What you, the developer, wrote:</span>
+<span class="code-keyword">var</span> user = db.<span class="code-function">Query</span>(<span class="code-string">"Users"</span>)
+    .<span class="code-function">Where</span>(r =&gt; (<span class="code-keyword">int</span>)r[<span class="code-string">"Id"</span>] == <span class="code-number">42</span>)
+    .<span class="code-function">ToList</span>();</code></pre>
+            </div>
+            <div class="layer" id="layer-plan" style="display:none">
+<pre><code><span class="code-comment">// What BuildExecutionPlan produced:</span>
+QueryExecutionPlan {
+    Predicates: [],                    <span class="code-comment">// empty — no leftover filter</span>
+    IndexRange: {
+        ExactKey: <span class="code-number">42</span>,                 <span class="code-comment">// index can do this exactly</span>
+        HasLowerBound: <span class="code-keyword">false</span>,
+        HasUpperBound: <span class="code-keyword">false</span>
+    },
+    OrderByColumn: <span class="code-keyword">null</span>,
+    IsOrderByDescending: <span class="code-keyword">false</span>
+}</code></pre>
+            </div>
+            <div class="layer" id="layer-ops" style="display:none">
+<pre><code><span class="code-comment">// What actually ran on the Table:</span>
+_table.<span class="code-function">SelectByKey</span>(<span class="code-number">42</span>);
+  ↳ _index.<span class="code-function">Search</span>(<span class="code-number">42</span>);         <span class="code-comment">// B+ tree descent: O(log n)</span>
+  ↳ <span class="code-function">DeserializeRow</span>(bytes);     <span class="code-comment">// bytes → DataRow</span>
+  ↳ <span class="code-keyword">return</span> single row.
+
+<span class="code-comment">// No predicate loop. No sort. Done.</span></code></pre>
+            </div>
+          </div>
+          <p class="layer-description" id="layer-desc">Tab 1: your declarative intent. Nothing executes yet — LINQ is just a description.</p>
+        </div>
+
+        <p style="margin-top: var(--space-6);">This three-step journey — <strong>intent → plan → operation</strong> — is exactly why SQL and LINQ feel magical. The <span class="term" data-definition="A visitor pattern walks a tree-shaped data structure (like an expression tree) and does something at each node. Here it inspects the LINQ expression and pulls out index-friendly conditions.">visitor pattern</span> turns your <span class="term" data-definition="A lambda is a short, inline function written with the => syntax, like r => r['Id'] == 42. LINQ uses lambdas to express filters and sort keys.">lambda</span> into a data structure, and that data structure picks the physical operation.</p>
+      </section>
+
+      <!-- SCREEN 5: Spot the bug + warning callout -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Spot the bug: the query that won't use the index</h2>
+        <p>Here's a query that <em>looks</em> like it should be O(log n). But the developer made one small mistake, and now it full-scans 10 million rows every time. Can you spot it?</p>
+
+        <div class="bug-challenge">
+          <h3>Find the line that kills the index:</h3>
+          <div class="bug-code">
+            <div class="bug-line" data-line="1" onclick="checkBugLine(this, false)">
+              <span class="line-num">1</span>
+              <code>var x = db.Query("Users")</code>
+            </div>
+            <div class="bug-line bug-target" data-line="2" onclick="checkBugLine(this, true)">
+              <span class="line-num">2</span>
+              <code>    .Where(r =&gt; ((int)r["Id"]).ToString() == "42")</code>
+            </div>
+            <div class="bug-line" data-line="3" onclick="checkBugLine(this, false)">
+              <span class="line-num">3</span>
+              <code>    .ToList();</code>
+            </div>
+          </div>
+          <div class="bug-feedback" id="bug-feedback"></div>
+        </div>
+
+        <p style="margin-top: var(--space-6);">The planner only recognizes patterns shaped like <code>r["Id"] == constant</code>. The moment you wrap the column in a function call — <code>.ToString()</code>, <code>Math.Abs()</code>, <code>Substring()</code> — the visitor's pattern-match fails and the query falls back to a full scan. This is the same footgun as writing <code>WHERE TO_CHAR(id) = '42'</code> in SQL. Keep the column naked on one side of the comparison.</p>
+
+        <div class="callout callout-warning" style="margin-top: var(--space-8);">
+          <div class="callout-icon">!</div>
+          <div class="callout-content">
+            <strong class="callout-title">There are no secondary indexes in this engine</strong>
+            <p>Only the primary key has an index. Any filter on another column — <code>.Where(r =&gt; r["Name"] == "Alice")</code>, <code>.Where(r =&gt; r["Email"].Contains("@"))</code> — will <strong>always</strong> full-scan. Knowing this up front stops you from blaming AI, phantom slowdowns, or random gremlins when a query gets slow. If it's not the primary key, it's O(n).</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 6: Quiz -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Check your route-planning instincts</h2>
+        <p>Four scenarios. No memorization — just apply what you've seen.</p>
+
+        <div class="quiz-container" id="quiz-module4">
+
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Exactly. The visitor spots Id == 7 and folds it into IndexRange.ExactKey, so the access path is a single B+ tree lookup. The Age > 25 filter becomes a leftover predicate — it runs in memory on the one row that came back (or zero rows)."
+               data-explanation-wrong="Not quite. The planner only uses the index on the primary key (Id). A filter on Age has nothing to grab onto — it can only run in memory after the access path has already picked its rows.">
+            <h3 class="quiz-question">1. Given <code>.Where(r =&gt; (int)r["Age"] &gt; 25).Where(r =&gt; (int)r["Id"] == 7)</code> — which Where helps the index?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The <code>Age &gt; 25</code> one — ranges always use the index.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The <code>Id == 7</code> one. Age is filtered in memory afterward.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Both — the planner combines them into a compound index lookup.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-c"
+               data-explanation-right="Right. Sorting always happens last, in memory, over whatever survived the filters. Adding ORDER BY doesn't change which access path is chosen — it just tacks a sort step onto the end. If the matched set is large, that sort can dominate the runtime."
+               data-explanation-wrong="Think about the order of operations inside Execute: access path → predicates → sort. The sort is always last and always in memory — it can't speed things up, only add work.">
+            <h3 class="quiz-question">2. A user complains their query got slower after adding <code>ORDER BY</code>. What happened?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>ORDER BY switched the query from an index lookup to a full scan.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>ORDER BY re-opened the index in descending mode, which is slower.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Sorting runs in memory <em>after</em> filtering, so it added a sort step over every matched row.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-a"
+               data-explanation-right="Correct. Table is where the index lives — it would need to hold multiple B+ trees (one per indexed column). TableQuery's visitor would also need to be smart enough to pick the right tree, but the structural change starts in Table."
+               data-explanation-wrong="Close, but think about where the index physically lives. TableQuery builds the plan — it only knows about indexes that already exist. The storage of additional B+ trees has to be added to the class that owns the data.">
+            <h3 class="quiz-question">3. You want to add a secondary index on <code>Email</code>. Which class needs the biggest change?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span><code>Table</code> — it would hold multiple B+ trees, and TableQuery would later need a smarter visitor.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span><code>TableQuery</code> — it's where queries are parsed, so that's where new indexes plug in.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span><code>WhereExpressionVisitor</code> — indexes live inside the visitor.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Nailed it. The visitor folds both bounds into IndexRange — LowerBound = 10, UpperBound = 20 — so the access path is a range scan over [10, 20). Both predicates were absorbed by the index, so the in-memory predicate loop is empty."
+               data-explanation-wrong="Look at the ExecuteAccessPath ladder again. When both HasLowerBound and HasUpperBound are set, the planner calls SelectByPrimaryKeyRange. Because both comparisons are on the indexed column, neither falls through as a leftover predicate.">
+            <h3 class="quiz-question">4. Given <code>.Where(r =&gt; (int)r["Id"] &gt;= 10 &amp;&amp; (int)r["Id"] &lt; 20)</code>, describe the plan.</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Full scan, then filter in memory for rows where Id is between 10 and 20.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Range scan over <code>[10, 20)</code> on the primary key. No leftover in-memory filter needed.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Two point lookups (one for 10, one for 20) combined into a list.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module4')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module4')">Try Again</button>
+        </div>
+
+        <p style="margin-top: var(--space-10); color: var(--color-text-secondary); font-style: italic;">Next up: reads were easy — they just have to be fast. Writes are harder. They have to survive crashes, power cuts, and half-finished transactions. Module 5 opens the durability hood.</p>
+      </section>
+
+    </div>
+  </div>
+</section>

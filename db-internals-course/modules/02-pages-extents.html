@@ -1,0 +1,332 @@
+<section class="module" id="module-2" style="background: var(--color-bg)">
+  <div class="module-content">
+
+    <header class="module-header animate-in">
+      <span class="module-number">02</span>
+      <h1 class="module-title">Pages &amp; Extents</h1>
+      <p class="module-subtitle">The storage floor plan — how bytes on <span class="term" data-definition="A disk is the physical hardware (SSD or hard drive) that stores data permanently, even when the computer is powered off.">disk</span> become something a database can find.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ============ SCREEN 1: The warehouse metaphor ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Disks don't care about rows</h2>
+        <p>Imagine a giant self-storage warehouse. Every single unit is <strong>exactly</strong> the same size. That's how a disk sees your database — not as tables and rows, but as a long row of identical storage units called <span class="term" data-definition="A page is a fixed-size chunk of bytes (4096 bytes in this engine) that the database uses as its smallest unit of storage. Everything on disk lives inside a page.">pages</span>.</p>
+
+        <p>The storage engine's whole job is translation: take your messy, variable-sized rows and cram them into these rigid, fixed-size units so the disk can move them around efficiently.</p>
+
+        <div class="pattern-cards stagger-children">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-1)">
+            <div class="pattern-icon" style="background: var(--color-actor-1); color: white; width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700;">P</div>
+            <h4 class="pattern-title">Page &mdash; 4096 <span class="term" data-definition="A byte is a unit of digital information — eight tiny on/off switches. One character of text is roughly one byte.">bytes</span></h4>
+            <p class="pattern-desc">The atom of storage. Everything on disk is a page.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2); color: white; width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700;">E</div>
+            <h4 class="pattern-title">Extent &mdash; 8 pages = 32 <span class="term" data-definition="KB means kilobytes. 1 KB is roughly 1,000 bytes — about a short paragraph of text.">KB</span></h4>
+            <p class="pattern-desc">A neighborhood of pages. Fetched as a group for locality.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-accent)">
+            <div class="pattern-icon" style="background: var(--color-accent); color: white; width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700;">&#9679;</div>
+            <h4 class="pattern-title">Dirty flag</h4>
+            <p class="pattern-desc">One bit that says "this page has changes that haven't hit disk yet."</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-4)">
+            <div class="pattern-icon" style="background: var(--color-actor-4); color: white; width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700;">L</div>
+            <h4 class="pattern-title">LRU cache</h4>
+            <p class="pattern-desc">Keeps hot pages in <span class="term" data-definition="RAM (Random Access Memory) is the fast, temporary memory your computer uses while running programs. Much quicker than disk, but emptied when power goes out.">RAM</span>. Evicts the one nobody touched in the longest time.</p>
+          </div>
+        </div>
+
+        <div class="callout callout-info" style="margin-top: var(--space-8);">
+          <div class="callout-icon">&#128161;</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why 4KB?</strong>
+            <p>Most <span class="term" data-definition="SSD stands for Solid State Drive — the modern storage chip that has replaced spinning hard drives in most laptops and phones.">SSDs</span> and <span class="term" data-definition="The OS page cache is a chunk of memory the operating system uses to remember recently-read disk blocks so it doesn't have to go back to the disk for them.">OS page caches</span> work in 4KB blocks. Matching the page size to the OS block size means one database page = one disk I/O &mdash; no wasted reads.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SCREEN 2: Anatomy of a Page ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Anatomy of a page</h2>
+        <p>A page is absurdly simple: an ID, a fixed-size array of raw bytes, and a flag. That's it. The ID is what makes the math work &mdash; it tells the engine exactly where on disk this unit lives.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line"><span class="code-keyword">public class</span> <span class="code-function">Page</span></span>
+<span class="code-line">{</span>
+<span class="code-line"><span class="code-comment">#if DATA_PAGE_SIZE</span></span>
+<span class="code-line">    <span class="code-keyword">public const int</span> PageSize = #DATA_PAGE_SIZE#; </span>
+<span class="code-line"><span class="code-comment">#else</span></span>
+<span class="code-line">    <span class="code-keyword">public const int</span> PageSize = <span class="code-number">4096</span>; <span class="code-comment">// 4KB pages</span></span>
+<span class="code-line"><span class="code-comment">#endif</span></span>
+<span class="code-line">    <span class="code-keyword">public int</span> PageId { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public byte</span>[] Data { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public bool</span> IsDirty { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    </span>
+<span class="code-line">    <span class="code-keyword">public</span> <span class="code-function">Page</span>(<span class="code-keyword">int</span> pageId)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        PageId = pageId;</span>
+<span class="code-line">        Data = <span class="code-keyword">new byte</span>[PageSize];</span>
+<span class="code-line">        IsDirty = <span class="code-keyword">false</span>;</span>
+<span class="code-line">    }</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Every page is exactly 4096 bytes &mdash; no exceptions. This matches the size the disk itself prefers to move around.</p>
+              <p class="tl">Each page has an ID number. That ID is secretly a map coordinate &mdash; it tells us where the page lives on disk.</p>
+              <p class="tl">The Data array is the actual 4096-byte storage unit. Whatever the database wants to remember goes here.</p>
+              <p class="tl">IsDirty starts as false &mdash; the page matches what's on disk exactly.</p>
+              <p class="tl">The constructor just hands you a fresh, empty page with the ID you asked for &mdash; a blank storage unit, freshly swept.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-6);">Because every page is the same size, finding page number <em>N</em> on disk is a single multiplication &mdash; no searching, no index lookup, just arithmetic.</p>
+
+        <!-- Grid visual: file offset = pageId * 4096 -->
+        <div style="background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-6); box-shadow: var(--shadow-sm); margin-top: var(--space-6);">
+          <div style="font-family: var(--font-mono); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-muted); margin-bottom: var(--space-4);">The file, viewed as a ribbon of pages</div>
+
+          <div style="display: grid; grid-template-columns: repeat(8, 1fr); gap: var(--space-1); margin-bottom: var(--space-3);">
+            <div style="background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-family: var(--font-mono); font-size: var(--text-xs);">P0</div>
+            <div style="background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-family: var(--font-mono); font-size: var(--text-xs); opacity: 0.85;">P1</div>
+            <div style="background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-family: var(--font-mono); font-size: var(--text-xs); opacity: 0.75;">P2</div>
+            <div style="background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-family: var(--font-mono); font-size: var(--text-xs); opacity: 0.85;">P3</div>
+            <div style="background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-family: var(--font-mono); font-size: var(--text-xs); opacity: 0.75;">P4</div>
+            <div style="background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-family: var(--font-mono); font-size: var(--text-xs); opacity: 0.85;">P5</div>
+            <div style="background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-family: var(--font-mono); font-size: var(--text-xs); opacity: 0.75;">P6</div>
+            <div style="background: var(--color-actor-1); color: white; padding: var(--space-3); border-radius: var(--radius-sm); text-align: center; font-family: var(--font-mono); font-size: var(--text-xs); opacity: 0.85;">P7</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(8, 1fr); gap: var(--space-1); font-family: var(--font-mono); font-size: 0.65rem; color: var(--color-text-muted); text-align: center;">
+            <div>0</div><div>4096</div><div>8192</div><div>12288</div><div>16384</div><div>20480</div><div>24576</div><div>28672</div>
+          </div>
+
+          <div style="margin-top: var(--space-5); padding: var(--space-4); background: var(--color-bg-code); border-radius: var(--radius-sm); text-align: center; font-family: var(--font-mono); font-size: var(--text-sm); color: #CDD6F4;">
+            file <span class="term" data-definition="An offset is a distance from the start of something. In a file, it's how many bytes to skip before you reach the byte you want.">offset</span> = <span style="color: #FAB387;">pageId</span> &times; <span style="color: #FAB387;">4096</span>
+          </div>
+
+          <p style="margin-top: var(--space-4); font-size: var(--text-sm); color: var(--color-text-secondary); text-align: center;">Want page 17? Skip 17 &times; 4096 = 69,632 bytes into the file. Done.</p>
+        </div>
+      </section>
+
+      <!-- ============ SCREEN 3: Extents ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Extents &mdash; bundling the moving truck</h2>
+        <p>The warehouse moving truck is expensive to dispatch. Running 8 separate trips for 8 adjacent units is wasteful &mdash; so we send it once and have it pick up the whole block at a time. That block is called an <span class="term" data-definition="An extent is a group of 8 contiguous pages (32 KB total) treated as a single unit for disk I/O. Databases fetch extents instead of individual pages because reading a bigger chunk at once is almost free compared to reading eight small chunks.">extent</span>.</p>
+
+        <p>8 pages sitting next to each other. One trip. That's the whole idea.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line"><span class="code-keyword">public class</span> <span class="code-function">Extent</span></span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">public const int</span> PagesPerExtent = <span class="code-number">8</span>;</span>
+<span class="code-line">    </span>
+<span class="code-line">    <span class="code-keyword">public int</span> ExtentId { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public</span> Page[] Pages { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public bool</span> IsDirty =&gt; Pages.<span class="code-function">Any</span>(p =&gt; p.IsDirty);</span>
+<span class="code-line">    </span>
+<span class="code-line">    <span class="code-keyword">public</span> <span class="code-function">Extent</span>(<span class="code-keyword">int</span> extentId)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        ExtentId = extentId;</span>
+<span class="code-line">        Pages = <span class="code-keyword">new</span> Page[PagesPerExtent];</span>
+<span class="code-line">        </span>
+<span class="code-line">        <span class="code-keyword">for</span> (<span class="code-keyword">int</span> i = <span class="code-number">0</span>; i &lt; PagesPerExtent; i++)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            <span class="code-keyword">int</span> pageId = extentId * PagesPerExtent + i;</span>
+<span class="code-line">            Pages[i] = <span class="code-keyword">new</span> <span class="code-function">Page</span>(pageId);</span>
+<span class="code-line">        }</span>
+<span class="code-line">    }</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Every extent holds exactly 8 pages. Always. No more, no less.</p>
+              <p class="tl">The extent gets its own ID and a little shelf with 8 slots for pages.</p>
+              <p class="tl">"IsDirty" for an extent just asks: does any page in here need saving?</p>
+              <p class="tl">The constructor fills each of the 8 slots with a fresh page.</p>
+              <p class="tl">Here's the trick: <code>extentId &times; 8 + i</code> gives each page its global ID. So page 17 lives in extent 2, slot 1 (since 2 &times; 8 + 1 = 17). No lookup table &mdash; just multiplication.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent" style="margin-top: var(--space-6);">
+          <div class="callout-icon">&#9889;</div>
+          <div class="callout-content">
+            <strong class="callout-title">Dirty pages are lazy</strong>
+            <p>A page can be modified in <span class="term" data-definition="Memory is the computer's short-term RAM — fast but wiped clean when power cuts out. The opposite of disk, which is slow but permanent.">memory</span> dozens of times and only written to disk once, when something asks for a <span class="term" data-definition="A flush is the act of forcing all modified-but-unsaved pages from memory out to disk so they survive a power cut.">flush</span>. That's why databases are fast &mdash; disk writes are <em>batched</em>.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ SCREEN 4: Drag & Drop quiz ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Try it yourself: which extent?</h2>
+        <p>Remember the formula: <code>extentId = pageId &divide; 8</code>. Drag each page to the extent it belongs in. The math is the whole game.</p>
+
+        <div class="dnd-container">
+          <div class="dnd-chips">
+            <div class="dnd-chip" draggable="true" data-answer="extent-0">Page 0</div>
+            <div class="dnd-chip" draggable="true" data-answer="extent-0">Page 7</div>
+            <div class="dnd-chip" draggable="true" data-answer="extent-1">Page 8</div>
+            <div class="dnd-chip" draggable="true" data-answer="extent-1">Page 15</div>
+            <div class="dnd-chip" draggable="true" data-answer="extent-2">Page 23</div>
+          </div>
+
+          <div class="dnd-zones">
+            <div class="dnd-zone" data-correct="extent-0">
+              <p class="dnd-zone-label">Extent 0 &mdash; pages 0 through 7</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+            <div class="dnd-zone" data-correct="extent-1">
+              <p class="dnd-zone-label">Extent 1 &mdash; pages 8 through 15</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+            <div class="dnd-zone" data-correct="extent-2">
+              <p class="dnd-zone-label">Extent 2 &mdash; pages 16 through 23</p>
+              <div class="dnd-zone-target">Drop here</div>
+            </div>
+          </div>
+
+          <button class="btn" onclick="checkDnD()">Check Matches</button>
+          <button class="btn" onclick="resetDnD()">Reset</button>
+        </div>
+      </section>
+
+      <!-- ============ SCREEN 5: LRU cache ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The front-desk clipboard &mdash; LRU cache</h2>
+        <p>Walking to the warehouse for every lookup is exhausting. So the front desk keeps a clipboard of the units opened most recently &mdash; that's the <span class="term" data-definition="A cache is a small, fast stash of recently-used data that sits closer to you than the real storage, so repeated lookups don't cost as much.">cache</span>. When it runs out of space, it evicts whoever was touched the longest time ago. That rule has a name: <span class="term" data-definition="LRU means Least Recently Used — a simple rule for deciding what to throw out when you run low on space. You keep whatever you touched most recently, and you evict whatever you haven't touched in the longest time.">LRU</span> (Least Recently Used).</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line"><span class="code-keyword">public void</span> <span class="code-function">Put</span>(<span class="code-keyword">int</span> pageId, Page page)</span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">lock</span> (_lockObject)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">if</span> (_cache.<span class="code-function">TryGetValue</span>(pageId, <span class="code-keyword">out var</span> node))</span>
+<span class="code-line">        {</span>
+<span class="code-line">            node.Page = page;</span>
+<span class="code-line">            <span class="code-function">MoveToHead</span>(node);</span>
+<span class="code-line">            <span class="code-keyword">return</span>;</span>
+<span class="code-line">        }</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">var</span> newNode = <span class="code-keyword">new</span> <span class="code-function">CacheNode</span>(page);</span>
+<span class="code-line">        _cache[pageId] = newNode;</span>
+<span class="code-line">        <span class="code-function">AddToHead</span>(newNode);</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">if</span> (_cache.Count &gt; _capacity)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            <span class="code-keyword">var</span> removed = <span class="code-function">RemoveTail</span>();</span>
+<span class="code-line">            <span class="code-keyword">if</span> (removed != <span class="code-keyword">null</span>)</span>
+<span class="code-line">                _cache.<span class="code-function">TryRemove</span>(removed.Page.PageId, <span class="code-keyword">out</span> _);</span>
+<span class="code-line">        }</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Lock the clipboard first &mdash; two people writing on it at once would be chaos.</p>
+              <p class="tl">If this page is already on the clipboard, just refresh it and move its entry to the top (most recent).</p>
+              <p class="tl">Otherwise, write a brand-new entry at the top of the clipboard.</p>
+              <p class="tl">If the clipboard is overflowing past its capacity...</p>
+              <p class="tl">...pluck off the bottom entry &mdash; that's the one nobody has touched in the longest time. Forget it exists.</p>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top: var(--space-6);">The "top" and "bottom" of the clipboard are tracked by a <span class="term" data-definition="A doubly-linked list is a chain where every item holds a pointer to both its neighbors. Moving something to the top of the chain is instant — just rewire a couple of pointers.">doubly-linked list</span>, which is why moving something to the top is almost free. An even fancier variant &mdash; a <span class="term" data-definition="A memory-mapped file lets your program pretend a file on disk is just a giant array in memory. The OS quietly handles moving bytes between disk and RAM behind the scenes.">memory-mapped file</span> &mdash; lets the OS handle caching for you, but that's a topic for another day.</p>
+      </section>
+
+      <!-- ============ SCREEN 6: Quiz ============ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Put it to work</h2>
+        <p>Three questions to stretch the ideas. No trick questions &mdash; just situations you might hit in real conversations with an AI coding assistant.</p>
+
+        <div class="quiz-container" id="quiz-module2">
+
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Exactly. 100 pages &times; 4096 bytes = 409,600 bytes, or about 400 KB. Units matter: 'cache 1000 pages' is only about 4 MB of RAM, not 4 GB. This is why you can bluff-check an AI's suggestions."
+               data-explanation-wrong="Check the units. A page is 4 KB (not 4 MB). 100 pages &times; 4 KB each = 400 KB. A number like 4 MB would mean 1000 pages, and 400 MB would mean 100,000 pages.">
+            <h3 class="quiz-question">If the cache holds 100 pages at 4 KB each, how much RAM does it use?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>About 4 MB</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>About 400 KB</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>About 400 MB</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-c"
+               data-explanation-right="Right. Pages sitting in the cache with IsDirty = true live in RAM only &mdash; they vanish on a power cut. Whatever made it into the write-ahead log survives, because the log is written to disk before the change is considered safe. That's the next module's headline."
+               data-explanation-wrong="Not quite. A dirty page is a page changed in memory but not yet flushed to disk. When the lights go out, anything still only in memory is gone. The database relies on a separate write-ahead log to recover &mdash; we'll see that soon.">
+            <h3 class="quiz-question">You've written 10,000 rows but haven't called <code>Flush()</code>. The power cuts out. What survives?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>All 10,000 rows &mdash; they were written to the Page objects.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Nothing &mdash; the database is corrupted.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Only whatever was safely recorded in the write-ahead log; dirty pages in memory are gone.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-a"
+               data-explanation-right="Exactly. Recency is cheap to track &mdash; move one node to the head of a list, done. Frequency would mean counting every access and sorting, which is slow on every single read. 'Good enough and fast' beats 'perfect and slow' almost every time."
+               data-explanation-wrong="Think about what each rule costs to maintain. LRU only has to move a node to the top of a list on each access. Counting frequencies would mean updating a counter and re-sorting on every read &mdash; tons of bookkeeping for a marginal improvement. Recency is a cheap approximation of usefulness.">
+            <h3 class="quiz-question">Why does the cache evict the <em>least recently used</em> page, rather than the <em>least frequently used</em> one?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Recency is cheap to track &mdash; one pointer move. Frequency would require counting and sorting on every access.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Recently used pages are always dirty, so we'd lose changes if we evicted them.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Frequency counters take up too much disk space to store.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module2')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module2')">Try Again</button>
+        </div>
+
+        <p style="margin-top: var(--space-10); color: var(--color-text-secondary); font-size: var(--text-sm); text-align: center;">Next up: module 3, <em>The B+ Tree</em>. Now that bytes have a place to live, how do we find one specific row among millions?</p>
+      </section>
+
+    </div>
+  </div>
+</section>

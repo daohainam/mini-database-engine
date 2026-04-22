@@ -1,0 +1,500 @@
+<section class="module" id="module-7" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+    <header class="module-header animate-in">
+      <span class="module-number">07</span>
+      <h1 class="module-title">Observability — Watching the Engine Run</h1>
+      <p class="module-subtitle">The cockpit instrument panel for a database that cannot be opened mid-flight.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- SCREEN 1 — The Cockpit Hook -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Flying blind is not a strategy</h2>
+        <p>Your database has been running for three days. Was everything fine? Did commits happen? How many? How many rolled back? If you cannot answer those questions in under five seconds, your system is not <span class="term" data-definition="Observability is the ability to understand what a running system is doing from the outside — by reading the signals it emits (numbers and log lines), without stopping it or opening it up. If a system is observable, you can diagnose problems from its output alone.">observable</span>.</p>
+
+        <p>A pilot cannot open the hood of a 747 at 35,000 feet. They rely on the cockpit instrument panel — gauges, warning lights, and the voice recorder. A running database is the same. You cannot freeze it mid-transaction to peek inside. You need instruments that report outward while it flies.</p>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">✈️</div>
+          <div class="callout-content">
+            <strong class="callout-title">The cockpit analogy</strong>
+            <p><span class="term" data-definition="Metrics are numeric measurements collected over time — like an altimeter or a fuel gauge. They are cheap to record and great for spotting trends, but they do not explain *why* something happened.">Metrics</span> are the gauges on the dashboard — altitude, fuel, airspeed. <span class="term" data-definition="Structured logging writes each event as a machine-readable record (usually JSON) with named fields — timestamp, level, event name, and context — instead of free-form text. This makes logs searchable and filterable by tools.">Structured logs</span> are the cockpit voice recorder — rich detail about every event, kept for later review. You need both.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 2 — Bad vs Good Logging -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">One sentence. Two realities.</h2>
+        <p>Here is the same event — a row being inserted — logged two different ways. Both &ldquo;work.&rdquo; Only one of them is usable after the fact.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code" style="border-right: 2px solid var(--color-error);">
+            <span class="translation-label" style="color: var(--color-error); opacity: 1;">BAD</span>
+<pre><code><span class="code-line"><span class="code-function">Console</span>.<span class="code-function">WriteLine</span>(<span class="code-string">"insert done"</span>);</span></code></pre>
+            <div style="margin-top: var(--space-4); font-family: var(--font-body); font-size: var(--text-sm); color: #CDD6F4;">
+              <p style="margin: 0 0 var(--space-2) 0;">No timestamp.</p>
+              <p style="margin: 0 0 var(--space-2) 0;">No table name.</p>
+              <p style="margin: 0 0 var(--space-2) 0;">No transaction id.</p>
+              <p style="margin: 0;">Cannot be filtered, searched, or shipped anywhere useful.</p>
+            </div>
+          </div>
+          <div class="translation-english" style="border-left: 3px solid var(--color-success);">
+            <span class="translation-label" style="color: var(--color-success);">GOOD</span>
+<pre style="background: var(--color-bg-code); color: #CDD6F4; padding: var(--space-4); border-radius: var(--radius-sm); margin: 0 0 var(--space-4) 0;"><code style="font-size: var(--text-xs);">{"timestamp":"2026-04-22T10:12:03Z",
+ "level":"Information",
+ "event":"row.inserted",
+ "table":"Users",
+ "txn":42}</code></pre>
+            <div class="translation-lines">
+              <p class="tl">Every field is named and machine-readable — it is <span class="term" data-definition="JSON (JavaScript Object Notation) is a simple text format for storing structured data as key-value pairs. Most log pipelines, dashboards, and cloud tools speak JSON natively, so emitting logs as JSON makes them instantly usable.">JSON</span>.</p>
+              <p class="tl">The <span class="term" data-definition="An ISO timestamp is a date-time string in a standardized international format like 2026-04-22T10:12:03Z. The Z means UTC. Because the format is universal, any tool in the world can sort, filter, and compare these timestamps correctly.">ISO timestamp</span> sorts correctly across time zones.</p>
+              <p class="tl">The event name is a stable key you can grep for across millions of lines.</p>
+              <p class="tl">Context travels with the event — table, transaction, whatever matters.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-warning">
+          <div class="callout-icon">⚠️</div>
+          <div class="callout-content">
+            <strong class="callout-title">AI-generated debug lines are not observability</strong>
+            <p>When a code assistant writes <code>Console.WriteLine("did the thing")</code>, that is print-debugging pollution, not instrumentation. Recognizing this difference is one of the biggest quality markers in professional code.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 3 — The Log Entry & The Logger -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The black box recorder</h2>
+        <p>Every log line in the engine is a <code>DatabaseLogEntry</code> — a small, strongly-typed object that knows how to turn itself into JSON. Think of it as one page torn from the flight recorder.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">public sealed class</span> <span class="code-function">DatabaseLogEntry</span></span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">public</span> DateTimeOffset Timestamp { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; } = DateTimeOffset.UtcNow;</span>
+<span class="code-line">    <span class="code-keyword">public</span> DatabaseLogLevel Level { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public string</span> EventName { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; } = <span class="code-keyword">string</span>.Empty;</span>
+<span class="code-line">    <span class="code-keyword">public string</span> Message { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; } = <span class="code-keyword">string</span>.Empty;</span>
+<span class="code-line">    <span class="code-keyword">public</span> IReadOnlyDictionary&lt;<span class="code-keyword">string</span>, <span class="code-keyword">object</span>?&gt; Properties { <span class="code-keyword">get</span>; <span class="code-keyword">init</span>; } = <span class="code-keyword">new</span> Dictionary&lt;<span class="code-keyword">string</span>, <span class="code-keyword">object</span>?&gt;();</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">public string</span> <span class="code-function">ToJson</span>()</span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">var</span> payload = <span class="code-keyword">new</span> Dictionary&lt;<span class="code-keyword">string</span>, <span class="code-keyword">object</span>?&gt;(StringComparer.Ordinal)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            [<span class="code-string">"timestamp"</span>] = Timestamp.<span class="code-function">ToString</span>(<span class="code-string">"O"</span>),</span>
+<span class="code-line">            [<span class="code-string">"level"</span>] = Level.<span class="code-function">ToString</span>(),</span>
+<span class="code-line">            [<span class="code-string">"event"</span>] = EventName,</span>
+<span class="code-line">            [<span class="code-string">"message"</span>] = Message</span>
+<span class="code-line">        };</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">foreach</span> (<span class="code-keyword">var</span> pair <span class="code-keyword">in</span> Properties)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            payload[pair.Key] = pair.Value;</span>
+<span class="code-line">        }</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">return</span> JsonSerializer.<span class="code-function">Serialize</span>(payload);</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">A log entry is a fixed-shape record — one page of the flight recorder.</p>
+              <p class="tl">It is born with the current UTC timestamp already stamped on it.</p>
+              <p class="tl">A <span class="term" data-definition="A log level is a tag on each log line that says how important it is — Information, Warning, Error, and so on. Operators filter by level to separate noise from alarms.">log level</span> says how loud this entry is: Information, Warning, Error.</p>
+              <p class="tl">An event name — like <code>row.inserted</code> — is the stable key you grep for later.</p>
+              <p class="tl">A free-form message for humans, plus a dictionary of extra properties for context (table name, transaction id, row count).</p>
+              <p class="tl"><code>ToJson()</code> flattens everything into one JSON string: the four standard keys first, then every custom property tagged on.</p>
+              <p class="tl">The result is one text line that any log tool on earth can parse.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 4 — Metrics Counter class -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The dashboard gauges</h2>
+        <p>Logs tell the story. Metrics count the story. Every major event the engine performs bumps a <span class="term" data-definition="A counter is a number that only goes up — total inserts, total flushes, total checkpoints. Subtract two readings to get the rate between them. Counters are the simplest and cheapest metric type.">counter</span> by one. Here is the whole metrics gauge cluster in 30 lines.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">internal sealed class</span> <span class="code-function">DatabaseMetrics</span></span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">private long</span> _tablesCreated;</span>
+<span class="code-line">    <span class="code-keyword">private long</span> _transactionsStarted;</span>
+<span class="code-line">    <span class="code-keyword">private long</span> _inserts;</span>
+<span class="code-line">    <span class="code-keyword">private long</span> _updates;</span>
+<span class="code-line">    <span class="code-keyword">private long</span> _deletes;</span>
+<span class="code-line">    <span class="code-keyword">private long</span> _flushes;</span>
+<span class="code-line">    <span class="code-keyword">private long</span> _checkpoints;</span>
+<span class="code-line">    <span class="code-keyword">private long</span> _backupsCreated;</span>
+<span class="code-line">    <span class="code-keyword">private long</span> _integrityChecks;</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">public void</span> <span class="code-function">IncrementTablesCreated</span>() =&gt; Interlocked.<span class="code-function">Increment</span>(<span class="code-keyword">ref</span> _tablesCreated);</span>
+<span class="code-line">    <span class="code-keyword">public void</span> <span class="code-function">IncrementTransactionsStarted</span>() =&gt; Interlocked.<span class="code-function">Increment</span>(<span class="code-keyword">ref</span> _transactionsStarted);</span>
+<span class="code-line">    <span class="code-keyword">public void</span> <span class="code-function">IncrementInserts</span>() =&gt; Interlocked.<span class="code-function">Increment</span>(<span class="code-keyword">ref</span> _inserts);</span>
+<span class="code-line">    <span class="code-keyword">public void</span> <span class="code-function">IncrementUpdates</span>() =&gt; Interlocked.<span class="code-function">Increment</span>(<span class="code-keyword">ref</span> _updates);</span>
+<span class="code-line">    <span class="code-keyword">public void</span> <span class="code-function">IncrementDeletes</span>() =&gt; Interlocked.<span class="code-function">Increment</span>(<span class="code-keyword">ref</span> _deletes);</span>
+<span class="code-line">    <span class="code-keyword">public void</span> <span class="code-function">IncrementFlushes</span>() =&gt; Interlocked.<span class="code-function">Increment</span>(<span class="code-keyword">ref</span> _flushes);</span>
+<span class="code-line">    <span class="code-keyword">public void</span> <span class="code-function">IncrementCheckpoints</span>() =&gt; Interlocked.<span class="code-function">Increment</span>(<span class="code-keyword">ref</span> _checkpoints);</span>
+<span class="code-line">    <span class="code-keyword">public void</span> <span class="code-function">IncrementBackupsCreated</span>() =&gt; Interlocked.<span class="code-function">Increment</span>(<span class="code-keyword">ref</span> _backupsCreated);</span>
+<span class="code-line">    <span class="code-keyword">public void</span> <span class="code-function">IncrementIntegrityChecks</span>() =&gt; Interlocked.<span class="code-function">Increment</span>(<span class="code-keyword">ref</span> _integrityChecks);</span>
+<span class="code-line"></span>
+<span class="code-line">    <span class="code-keyword">public</span> DatabaseMetricsSnapshot <span class="code-function">Snapshot</span>()</span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">return new</span> DatabaseMetricsSnapshot</span>
+<span class="code-line">        {</span>
+<span class="code-line">            TablesCreated = Interlocked.<span class="code-function">Read</span>(<span class="code-keyword">ref</span> _tablesCreated),</span>
+<span class="code-line">            TransactionsStarted = Interlocked.<span class="code-function">Read</span>(<span class="code-keyword">ref</span> _transactionsStarted),</span>
+<span class="code-line">            Inserts = Interlocked.<span class="code-function">Read</span>(<span class="code-keyword">ref</span> _inserts),</span>
+<span class="code-line">            Updates = Interlocked.<span class="code-function">Read</span>(<span class="code-keyword">ref</span> _updates),</span>
+<span class="code-line">            Deletes = Interlocked.<span class="code-function">Read</span>(<span class="code-keyword">ref</span> _deletes),</span>
+<span class="code-line">            Flushes = Interlocked.<span class="code-function">Read</span>(<span class="code-keyword">ref</span> _flushes),</span>
+<span class="code-line">            Checkpoints = Interlocked.<span class="code-function">Read</span>(<span class="code-keyword">ref</span> _checkpoints),</span>
+<span class="code-line">            BackupsCreated = Interlocked.<span class="code-function">Read</span>(<span class="code-keyword">ref</span> _backupsCreated),</span>
+<span class="code-line">            IntegrityChecks = Interlocked.<span class="code-function">Read</span>(<span class="code-keyword">ref</span> _integrityChecks)</span>
+<span class="code-line">        };</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Nine private numbers — one per gauge on the dashboard.</p>
+              <p class="tl">Each <code>Increment</code> method bumps one gauge by exactly one tick.</p>
+              <p class="tl"><span class="term" data-definition="Interlocked is a .NET helper class that performs simple arithmetic operations on numbers in a way that safely survives multiple threads hitting the same variable at once. It leans on special CPU instructions rather than software locks.">Interlocked</span>.Increment is the magic: it is <span class="term" data-definition="An operation is atomic if it either fully happens or does not happen at all — no other thread can ever see it half-done. This is what keeps counters correct when many threads hit them simultaneously.">atomic</span>, so two threads can increment at the same nanosecond and nothing gets lost.</p>
+              <p class="tl"><code>Snapshot()</code> takes a consistent reading of every gauge at once — one still photograph of the whole dashboard.</p>
+              <p class="tl">A <span class="term" data-definition="A snapshot is a read-only copy of a value (or a set of values) captured at one instant. Because it is frozen, the caller can look at it without worrying about it changing underneath them.">snapshot</span> is read-only and safe to pass around — callers cannot accidentally corrupt the live counters.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">⚡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Interlocked.Increment is lock-free</strong>
+            <p>It uses a CPU instruction (compare-and-swap) that is atomic at the hardware level. That is why you can count millions of events per second without contention — the gauges never slow the engine down.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 5 — The 9 counters as pattern cards + 7 event badges -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The gauge cluster</h2>
+        <p>Nine counters. Each one answers a different question about what the engine has been doing.</p>
+
+        <div class="pattern-cards stagger-children">
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-1)">
+            <div class="pattern-icon" style="background: var(--color-actor-1)">🗂️</div>
+            <h4 class="pattern-title">TablesCreated</h4>
+            <p class="pattern-desc">Total tables ever defined in this database — a rough measure of schema churn.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">🎬</div>
+            <h4 class="pattern-title">TransactionsStarted</h4>
+            <p class="pattern-desc">Every time <code>BeginTransaction</code> fires, this ticks. Divide by uptime to see load.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-5)">
+            <div class="pattern-icon" style="background: var(--color-actor-5)">➕</div>
+            <h4 class="pattern-title">Inserts</h4>
+            <p class="pattern-desc">Rows added across all tables — the purest measure of write volume.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-4)">
+            <div class="pattern-icon" style="background: var(--color-actor-4)">✏️</div>
+            <h4 class="pattern-title">Updates</h4>
+            <p class="pattern-desc">Rows modified in place. High update rates can hint at hotspot rows.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-3)">
+            <div class="pattern-icon" style="background: var(--color-actor-3)">🗑️</div>
+            <h4 class="pattern-title">Deletes</h4>
+            <p class="pattern-desc">Rows removed. Watch this to catch accidental mass deletions early.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+            <div class="pattern-icon" style="background: var(--color-actor-2)">💧</div>
+            <h4 class="pattern-title">Flushes</h4>
+            <p class="pattern-desc">Dirty pages pushed to disk. A surging rate means the engine is under write pressure.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-1)">
+            <div class="pattern-icon" style="background: var(--color-actor-1)">🚩</div>
+            <h4 class="pattern-title">Checkpoints</h4>
+            <p class="pattern-desc">Count of commit-triggered flushes — rises when the WAL is actively pushing data to disk.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-5)">
+            <div class="pattern-icon" style="background: var(--color-actor-5)">💾</div>
+            <h4 class="pattern-title">BackupsCreated</h4>
+            <p class="pattern-desc">How many full backups have been written. A flatline here is a disaster waiting to happen.</p>
+          </div>
+          <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-4)">
+            <div class="pattern-icon" style="background: var(--color-actor-4)">🩺</div>
+            <h4 class="pattern-title">IntegrityChecks</h4>
+            <p class="pattern-desc">How many times the engine audited itself for corruption. Zero means nobody is watching.</p>
+          </div>
+        </div>
+
+        <h2 class="screen-heading" style="margin-top: var(--space-12);">The event vocabulary</h2>
+        <p>Alongside the counters, the engine emits named events — the stable keys you filter on in a log aggregator. These seven cover the whole life of a database.</p>
+
+        <div class="badge-list">
+          <div class="badge-item">
+            <code class="badge-code">database.opened</code>
+            <span class="badge-desc">The engine attached to a database file — the cockpit lights just came on.</span>
+          </div>
+          <div class="badge-item">
+            <code class="badge-code">table.created</code>
+            <span class="badge-desc">A new table was defined, with its column count in the properties.</span>
+          </div>
+          <div class="badge-item">
+            <code class="badge-code">transaction.started</code>
+            <span class="badge-desc">A new unit of work began — the matching commit or rollback will follow.</span>
+          </div>
+          <div class="badge-item">
+            <code class="badge-code">row.inserted</code>
+            <span class="badge-desc">Data modification — a new row added; carries the table name and txn id.</span>
+          </div>
+          <div class="badge-item">
+            <code class="badge-code">row.updated</code>
+            <span class="badge-desc">Data modification — an existing row rewritten.</span>
+          </div>
+          <div class="badge-item">
+            <code class="badge-code">database.checkpoint</code>
+            <span class="badge-desc">A checkpoint completed — the engine just reached a durable save point.</span>
+          </div>
+          <div class="badge-item">
+            <code class="badge-code">database.integrity_check</code>
+            <span class="badge-desc">A health check ran — properties include how many issues were found.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 6 — Using it + flow + callout + quiz -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Three lines and you can see inside</h2>
+        <p>Here is the consumer side. Nothing fancy — register a logger, flip a flag, read a snapshot.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">using var</span> db = <span class="code-keyword">new</span> <span class="code-function">Database</span>(</span>
+<span class="code-line">    <span class="code-string">"mydata.mde"</span>,</span>
+<span class="code-line">    options: <span class="code-keyword">new</span> DatabaseOptions</span>
+<span class="code-line">    {</span>
+<span class="code-line">        Logger = <span class="code-keyword">new</span> <span class="code-function">JsonConsoleDatabaseLogger</span>(),</span>
+<span class="code-line">        EnableMetrics = <span class="code-keyword">true</span></span>
+<span class="code-line">    });</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">var</span> metrics = db.<span class="code-function">GetMetricsSnapshot</span>();</span>
+<span class="code-line">Console.<span class="code-function">WriteLine</span>(<span class="code-string">$"Inserts: {metrics.Inserts}, Checkpoints: {metrics.Checkpoints}"</span>);</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Open the database file — same as always.</p>
+              <p class="tl">Pass in options: hand it a logger that writes JSON to the console.</p>
+              <p class="tl">Flip <code>EnableMetrics = true</code> and the nine counters start ticking.</p>
+              <p class="tl">Later, anywhere in your code, call <code>GetMetricsSnapshot()</code> for a frozen reading.</p>
+              <p class="tl">Print, scrape, or ship to a dashboard. Three lines and the engine is no longer a black box.</p>
+            </div>
+          </div>
+        </div>
+
+        <h2 class="screen-heading" style="margin-top: var(--space-12);">One insert, traced through the instrument panel</h2>
+        <p>Follow a single insert from user code out through the two <span class="term" data-definition="Telemetry is the general term for data that a system emits about itself while it runs — metrics, logs, traces. Taken together, telemetry is how operators know whether the system is healthy.">telemetry</span> pipelines — counter and log — and back out as a readable snapshot.</p>
+
+        <div class="flow-animation" data-steps='[
+          {"highlight":"flow-actor-1","label":"Step 1: User code calls db.Insert"},
+          {"highlight":"flow-actor-2","label":"Step 2: Database forwards to the Metrics Counter","packet":true,"from":"actor-1","to":"actor-2"},
+          {"highlight":"flow-actor-3","label":"Step 3: Counter does Interlocked.Increment on _inserts (atomic, lock-free)","packet":true,"from":"actor-2","to":"actor-3"},
+          {"highlight":"flow-actor-2","label":"Step 4: Database builds a DatabaseLogEntry for row.inserted","packet":true,"from":"actor-3","to":"actor-2"},
+          {"highlight":"flow-actor-4","label":"Step 5: Logger serializes the entry to JSON and writes one line","packet":true,"from":"actor-2","to":"actor-4"},
+          {"highlight":"flow-actor-3","label":"Step 6: Later, user calls GetMetricsSnapshot and Counter returns a frozen reading","packet":true,"from":"actor-1","to":"actor-3"}
+        ]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon" style="background: var(--color-actor-1); color: white;">U</div>
+              <span>User Code</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon" style="background: var(--color-actor-2); color: white;">D</div>
+              <span>Database</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon" style="background: var(--color-actor-4); color: white;">M</div>
+              <span>Metrics Counter</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-4">
+              <div class="flow-actor-icon" style="background: var(--color-actor-5); color: white;">L</div>
+              <span>Logger</span>
+            </div>
+          </div>
+
+          <div class="flow-packet" id="flow-packet"></div>
+
+          <div class="flow-step-label" id="flow-label">Click Next Step to begin</div>
+
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">💡</div>
+          <div class="callout-content">
+            <strong class="callout-title">Metrics tell you *what*; logs tell you *why*.</strong>
+            <p>A dashboard lighting up &ldquo;commits dropped 80%&rdquo; is an alert. The matching log entries show which transactions failed and how — that is the root cause. Every mature observability setup runs both rails in parallel.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- SCREEN 7 — Quiz + Outro -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Does it click?</h2>
+        <p>Four scenarios. Answer from the cockpit, not from memory.</p>
+
+        <div class="quiz-container" id="quiz-module7">
+
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Exactly. Flushes and Checkpoints both spike when the engine is under disk-write pressure — they are the altimeter for storage. Watching them live tells you a bad query is blowing up before users even notice."
+               data-explanation-wrong="Think about which counters move when disk is getting hammered. Inserts tells you rows are being written, but not whether the storage layer is in distress. The counters closest to disk are the ones that signal storage pressure.">
+            <h3 class="quiz-question">You suspect a query is making storage blow up. Which single metric would you watch live?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Inserts — more rows means more disk used</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Flushes or Checkpoints — both indicate disk write pressure</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>TablesCreated — new tables take up space</span>
+              </button>
+              <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>TransactionsStarted — more transactions must mean more storage</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-c"
+               data-explanation-right="Right. TransactionsStarted exists, but there is no TransactionsRolledBack counter. You would either have to add one, or reconstruct the answer from log entries filtered by event name. This is a great example of metrics telling you only what you chose to instrument."
+               data-explanation-wrong="Look carefully at the nine counters in the gauge cluster. Only one side of the transaction lifecycle is counted. The other side has to be inferred.">
+            <h3 class="quiz-question">Your boss asks &ldquo;were any transactions rolled back last hour?&rdquo; Can this engine answer that cleanly?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Yes — TransactionsStarted and a Rollbacks counter give the answer directly</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>No — the engine has no logs or metrics for transactions at all</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Only partially — starts are tracked, but rollbacks have no dedicated counter; you would add one or infer from logs</span>
+              </button>
+              <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Yes — GetMetricsSnapshot returns every question you could ever ask</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-a"
+               data-explanation-right="Exactly. Structured logs unlock filtering, grep by event name, property-based queries, and shipping to tools like Splunk or Datadog. Plain Console.WriteLine strings lock you out of all of that."
+               data-explanation-wrong="Think about what a log aggregator does for a living. Without a stable event key and named properties, most of that machinery simply cannot work on your output.">
+            <h3 class="quiz-question">Why not just use <code>Console.WriteLine</code> everywhere for logs?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>You cannot filter, ship to log tools, grep by event name, or attach structured properties</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Console.WriteLine is slower than JSON serialization</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>It is illegal in most programming languages</span>
+              </button>
+              <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>No reason — they are equivalent for production use</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Correct. Interlocked.Increment is atomic at the CPU level — no update can be lost, even under extreme contention. A plain _inserts++ compiles to read-modify-write, which two threads can interleave and lose a count."
+               data-explanation-wrong="Re-read the metrics counter class. Every increment routes through Interlocked. That detail is the whole reason the code is thread-safe without any explicit locks.">
+            <h3 class="quiz-question">Two threads both call <code>IncrementInserts</code> at the same instant. Can the counter lose an increment?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Yes — without a lock, both threads race and one increment is lost</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>No — Interlocked.Increment is atomic, so both increments are guaranteed to land</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Only if the counter overflows a 64-bit integer</span>
+              </button>
+              <button class="quiz-option" data-value="option-d" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Yes — every concurrent counter eventually loses updates</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module7')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module7')">Try Again</button>
+        </div>
+
+        <div style="margin-top: var(--space-16); padding-top: var(--space-12); border-top: 1px solid var(--color-border);">
+          <h2 class="screen-heading" style="text-align: center;">You finished all seven modules.</h2>
+          <p style="text-align: center; max-width: 640px; margin: var(--space-4) auto var(--space-2) auto;">Seven dense modules. Page layout, B-tree indexes, the WAL, transactions, crash recovery, concurrency, and now observability. That is the whole spine of a real database engine — read at the level a working engineer reads it.</p>
+          <p style="text-align: center; max-width: 640px; margin: 0 auto var(--space-10) auto; color: var(--color-text-secondary);">The goal was never for you to become a database engineer. The goal was to become <strong style="color: var(--color-accent);">fluent enough to steer AI and debug production</strong>. You now own the vocabulary — pages, WAL, commits, locks, counters, structured logs — that makes those conversations specific instead of vague. That is a huge deal.</p>
+
+          <h2 class="screen-heading" style="text-align: center; margin-top: var(--space-12);">Where to go next</h2>
+          <div class="pattern-cards stagger-children">
+            <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-2)">
+              <div class="pattern-icon" style="background: var(--color-actor-2)">📖</div>
+              <h4 class="pattern-title">Read the real databases</h4>
+              <p class="pattern-desc">SQLite&rsquo;s source is famously readable — start there. Postgres&rsquo;s WAL code is legendary. You have the concepts now; the code will feel familiar, not foreign.</p>
+            </div>
+            <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-accent)">
+              <div class="pattern-icon" style="background: var(--color-accent)">🛠️</div>
+              <h4 class="pattern-title">Instrument your own code</h4>
+              <p class="pattern-desc">Pick any project you own. Add one counter and one structured log line per boundary — API to DB, DB to disk. That single habit separates amateur code from professional code.</p>
+            </div>
+            <div class="pattern-card animate-in" style="border-top: 3px solid var(--color-actor-5)">
+              <div class="pattern-icon" style="background: var(--color-actor-5)">🤖</div>
+              <h4 class="pattern-title">Question every AI suggestion</h4>
+              <p class="pattern-desc">You can now push back with specifics. &ldquo;Which layer does this belong in?&rdquo; &ldquo;How does this affect the WAL?&rdquo; &ldquo;What is the lock order?&rdquo; Those are the questions a senior engineer asks — and now they are yours.</p>
+            </div>
+          </div>
+
+          <p style="text-align: center; margin-top: var(--space-12); color: var(--color-text-secondary); font-style: italic;">Thank you for flying the whole route. Safe landings.</p>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</section>

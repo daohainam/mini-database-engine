@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"C:/Users/dao.nam/source/repos/daohainam/mini-database-engine/db-internals-course/modules\" \"C:/Users/dao.nam/source/repos/daohainam/mini-database-engine/db-internals-course/briefs\")",
+      "Bash(cp \"C:/Users/dao.nam/.claude/skills/codebase-to-course/references/styles.css\" \"C:/Users/dao.nam/source/repos/daohainam/mini-database-engine/db-internals-course/styles.css\")",
+      "Bash(cp \"C:/Users/dao.nam/.claude/skills/codebase-to-course/references/main.js\" \"C:/Users/dao.nam/source/repos/daohainam/mini-database-engine/db-internals-course/main.js\")",
+      "Bash(cp \"C:/Users/dao.nam/.claude/skills/codebase-to-course/references/_footer.html\" \"C:/Users/dao.nam/source/repos/daohainam/mini-database-engine/db-internals-course/_footer.html\")",
+      "Bash(cp \"C:/Users/dao.nam/.claude/skills/codebase-to-course/references/build.sh\" \"C:/Users/dao.nam/source/repos/daohainam/mini-database-engine/db-internals-course/build.sh\")",
+      "Bash(bash build.sh)",
+      "Bash(start \"\" \"C:/Users/dao.nam/source/repos/daohainam/mini-database-engine/db-internals-course/index.html\")",
+      "Bash(cmd //c start \"\" \"C:\\\\\\\\Users\\\\\\\\dao.nam\\\\\\\\source\\\\\\\\repos\\\\\\\\daohainam\\\\\\\\mini-database-engine\\\\\\\\db-internals-course\\\\\\\\index.html\")"
+    ]
+  }
+}

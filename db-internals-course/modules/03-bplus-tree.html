@@ -1,0 +1,520 @@
+<section class="module" id="module-3" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+
+    <header class="module-header animate-in">
+      <span class="module-number">03</span>
+      <h1 class="module-title">The B+ Tree — Finding a Needle Fast</h1>
+      <p class="module-subtitle">How databases turn "search 10 million rows" into about 23 comparisons.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 1: Hook + Metaphor + Hero visual                       -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The phone book with index tabs</h2>
+
+        <p>Scanning 10 million rows to find user #47,392,185 would take forever. A <span class="term" data-definition="A B+ tree is a shallow, wide tree structure used by almost every database to find rows fast. Internal nodes are signposts; the actual data lives only in the leaves, which are linked together like pages stapled in order.">B+ tree</span> turns that search into about 23 comparisons — like binary-searching a physical phone book, one flip at a time.</p>
+
+        <p>Picture a phone book with thick <strong>index tabs</strong> glued to the edge of the pages. The tabs don't contain phone numbers — they just say "flip here for S" or "flip here for T." The actual phone numbers live on the alphabetized pages at the end, and those pages are <span class="term" data-definition="Pages (or nodes) connected with pointers to their neighbors, so you can step from one to the next without going back to the top.">stapled in order</span> — once you land on "Smith" you can just keep reading forward to "Thompson, Turner, Vance."</p>
+
+        <p>That's a <span class="term" data-definition="A B+ tree is a shallow, wide tree structure used by almost every database to find rows fast. Internal nodes are signposts; the actual data lives only in the leaves, which are linked together like pages stapled in order.">B+ tree</span>. The tabs are <span class="term" data-definition="A node in the middle of the tree that holds only keys and pointers to children. Think of it as a signpost: 'keys less than 30 go left, keys 30–59 go middle, keys 60+ go right.' No actual values live here.">internal nodes</span>. The pages are <span class="term" data-definition="A node at the bottom of the tree that stores the actual key-value pairs. Leaves are also linked to their siblings in a chain, so range scans are a straight walk.">leaf nodes</span>. And the staples are what make range queries fast.</p>
+
+        <!-- HERO VISUAL: ASCII-style tree in CSS flex -->
+        <div style="margin: var(--space-10) 0; padding: var(--space-8) var(--space-4); background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-md);">
+
+          <!-- Root internal node -->
+          <div style="display:flex; justify-content:center; margin-bottom: var(--space-2);">
+            <div style="border:2px solid #2A7B9B; padding:var(--space-3) var(--space-6); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface); box-shadow: var(--shadow-sm); font-weight:600;">
+              [ 30 | 60 ]
+            </div>
+          </div>
+
+          <!-- Label: internal -->
+          <div style="text-align:center; font-size:var(--text-xs); color:var(--color-text-muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:var(--space-4);">
+            internal node (the tabs)
+          </div>
+
+          <!-- Tree lines -->
+          <div style="display:flex; justify-content:center; font-family:var(--font-mono); color:#2A7B9B; font-size: var(--text-lg); margin-bottom: var(--space-2);">
+            <span style="padding: 0 var(--space-8);">&#47;</span>
+            <span style="padding: 0 var(--space-8);">|</span>
+            <span style="padding: 0 var(--space-8);">&#92;</span>
+          </div>
+
+          <!-- Three leaf nodes with Next/Previous arrows -->
+          <div style="display:flex; justify-content:center; align-items:center; gap: var(--space-2); flex-wrap:wrap;">
+
+            <div style="border:2px solid #2A7B9B; padding:var(--space-3) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface); box-shadow: var(--shadow-sm);">
+              [5, 15, 25]
+            </div>
+
+            <div style="display:flex; flex-direction:column; align-items:center; color:#D4A843; font-family:var(--font-mono); font-size:var(--text-sm); line-height:1.1;">
+              <span>&lt;-- prev</span>
+              <span>next --&gt;</span>
+            </div>
+
+            <div style="border:2px solid #2A7B9B; padding:var(--space-3) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface); box-shadow: var(--shadow-sm);">
+              [35, 45]
+            </div>
+
+            <div style="display:flex; flex-direction:column; align-items:center; color:#D4A843; font-family:var(--font-mono); font-size:var(--text-sm); line-height:1.1;">
+              <span>&lt;-- prev</span>
+              <span>next --&gt;</span>
+            </div>
+
+            <div style="border:2px solid #2A7B9B; padding:var(--space-3) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface); box-shadow: var(--shadow-sm);">
+              [65, 75, 90]
+            </div>
+          </div>
+
+          <!-- Label: leaves -->
+          <div style="text-align:center; font-size:var(--text-xs); color:var(--color-text-muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.08em; margin-top: var(--space-4);">
+            leaf nodes (the stapled pages) -- linked forward &amp; back
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">!</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why B+ (not B)?</strong>
+            <p>In a plain B-tree, values live at every level. In a B+ tree, values live only in leaves, and leaves are linked. That makes range scans — <code>WHERE age BETWEEN 20 AND 30</code> — a straight walk instead of a full traversal.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 2: The Node shapes (code translation #1)               -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Two kinds of nodes, two different jobs</h2>
+
+        <p>Every node holds <strong>keys</strong>. But <span class="term" data-definition="A node at the bottom of the tree that stores the actual key-value pairs. Leaves are also linked to their siblings in a chain, so range scans are a straight walk.">leaf nodes</span> also hold the actual <strong>values</strong> and have <code>Next</code>/<code>Previous</code> pointers to their siblings. <span class="term" data-definition="A node in the middle of the tree that holds only keys and pointers to children. Think of it as a signpost: 'keys less than 30 go left, keys 30–59 go middle, keys 60+ go right.' No actual values live here.">Internal nodes</span> hold only keys and pointers to children — they're pure signposts.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">public abstract class</span> <span class="code-function">BPlusTreeNode</span></span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">public bool</span> IsLeaf { <span class="code-keyword">get</span>; <span class="code-keyword">protected set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public</span> BPlusTreeNode? Parent { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public</span> List&lt;<span class="code-keyword">object</span>&gt; Keys { <span class="code-keyword">get</span>; <span class="code-keyword">protected set</span>; }</span>
+<span class="code-line">    </span>
+<span class="code-line">    <span class="code-keyword">protected</span> <span class="code-function">BPlusTreeNode</span>(<span class="code-keyword">bool</span> isLeaf)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        IsLeaf = isLeaf;</span>
+<span class="code-line">        Keys = <span class="code-keyword">new</span> List&lt;<span class="code-keyword">object</span>&gt;();</span>
+<span class="code-line">    }</span>
+<span class="code-line">    </span>
+<span class="code-line">    <span class="code-keyword">public abstract int</span> KeyCount { <span class="code-keyword">get</span>; }</span>
+<span class="code-line">}</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">public class</span> <span class="code-function">BPlusTreeInternalNode</span> : BPlusTreeNode</span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">public</span> List&lt;BPlusTreeNode&gt; Children { <span class="code-keyword">get</span>; <span class="code-keyword">private set</span>; }</span>
+<span class="code-line">    </span>
+<span class="code-line">    <span class="code-keyword">public</span> <span class="code-function">BPlusTreeInternalNode</span>() : <span class="code-keyword">base</span>(<span class="code-keyword">false</span>)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        Children = <span class="code-keyword">new</span> List&lt;BPlusTreeNode&gt;();</span>
+<span class="code-line">    }</span>
+<span class="code-line">    </span>
+<span class="code-line">    <span class="code-keyword">public override int</span> KeyCount =&gt; Keys.Count;</span>
+<span class="code-line">}</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">public class</span> <span class="code-function">BPlusTreeLeafNode</span> : BPlusTreeNode</span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">public</span> List&lt;<span class="code-keyword">object</span>?&gt; Values { <span class="code-keyword">get</span>; <span class="code-keyword">private set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public</span> BPlusTreeLeafNode? Next { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    <span class="code-keyword">public</span> BPlusTreeLeafNode? Previous { <span class="code-keyword">get</span>; <span class="code-keyword">set</span>; }</span>
+<span class="code-line">    </span>
+<span class="code-line">    <span class="code-keyword">public</span> <span class="code-function">BPlusTreeLeafNode</span>() : <span class="code-keyword">base</span>(<span class="code-keyword">true</span>)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        Values = <span class="code-keyword">new</span> List&lt;<span class="code-keyword">object</span>?&gt;();</span>
+<span class="code-line">    }</span>
+<span class="code-line">    </span>
+<span class="code-line">    <span class="code-keyword">public override int</span> KeyCount =&gt; Keys.Count;</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Start with a shared blueprint: every node, leaf or not, has a list of keys and knows who its parent is.</p>
+              <p class="tl">The <code>KeyCount</code> is <span class="term" data-definition="A method or property declared without an implementation — each subclass must provide its own version. Like a blank form every node type has to fill in differently.">abstract</span>, meaning each kind of node fills it in its own way.</p>
+              <p class="tl">Internal nodes add one thing: a list of children. They're the signposts — they know where to send you, not what the answer is.</p>
+              <p class="tl">Leaf nodes are where the real data lives: a <code>Values</code> list that lines up with the keys one-to-one.</p>
+              <p class="tl">Plus <code>Next</code> and <code>Previous</code> pointers to the sibling leaves — this is the "stapled pages" trick. A <span class="term" data-definition="A chain of items where each one knows its neighbor on both sides — you can walk forward or backward without visiting the root again.">doubly linked</span> chain of leaves.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 3: Search & Range (code translations #2 and #3)        -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Two operations that justify the whole design</h2>
+
+        <p>A <span class="term" data-definition="A B+ tree is a shallow, wide tree structure used by almost every database to find rows fast. Internal nodes are signposts; the actual data lives only in the leaves, which are linked together like pages stapled in order.">B+ tree</span> earns its keep with two moves: jump straight to one key (<code>Search</code>) or collect every key in a span (<code>Range</code>). Same tree. Very different mechanics.</p>
+
+        <h3 style="font-family: var(--font-display); font-weight:600; margin-top: var(--space-8);">Search: climb down the tabs to the right page</h3>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">public object</span>? <span class="code-function">Search</span>(<span class="code-keyword">object</span> key)</span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">lock</span> (_lockObject)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">var</span> leaf = <span class="code-function">FindLeafNode</span>(key);</span>
+<span class="code-line">        <span class="code-keyword">int</span> index = <span class="code-function">FindKeyIndex</span>(leaf.Keys, key);</span>
+<span class="code-line">        </span>
+<span class="code-line">        <span class="code-keyword">if</span> (index &lt; leaf.Keys.Count &amp;&amp; _comparer.<span class="code-function">Compare</span>(leaf.Keys[index], key) == <span class="code-number">0</span>)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            <span class="code-keyword">return</span> ((BPlusTreeLeafNode)leaf).Values[index];</span>
+<span class="code-line">        }</span>
+<span class="code-line">        </span>
+<span class="code-line">        <span class="code-keyword">return null</span>;</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Grab the lock so two threads don't read the tree while someone else is rearranging it.</p>
+              <p class="tl"><code>FindLeafNode</code> walks from the root, picking the right child at each signpost until it reaches a leaf.</p>
+              <p class="tl">Inside that leaf, <span class="term" data-definition="A lookup trick: check the middle of a sorted list, then halve the remaining range on each step. Finds any item in a list of a million in about 20 comparisons.">binary search</span> finds where the key would sit among the sorted keys.</p>
+              <p class="tl">Ask the <span class="term" data-definition="An object that knows how to compare two values — ints, strings, dates — and say which is bigger. The tree stays type-agnostic by delegating to it.">comparer</span>: is the key at that spot actually equal to what we wanted? If yes, return the matching value.</p>
+              <p class="tl">If not, this key isn't in the tree — return <code>null</code>.</p>
+            </div>
+          </div>
+        </div>
+
+        <h3 style="font-family: var(--font-display); font-weight:600; margin-top: var(--space-10);">Range: find the start, then walk sideways</h3>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">public</span> IEnumerable&lt;KeyValuePair&lt;<span class="code-keyword">object</span>, <span class="code-keyword">object</span>?&gt;&gt; <span class="code-function">Range</span>(<span class="code-keyword">object</span>? minKey, <span class="code-keyword">object</span>? maxKey)</span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">lock</span> (_lockObject)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">var</span> results = <span class="code-keyword">new</span> List&lt;KeyValuePair&lt;<span class="code-keyword">object</span>, <span class="code-keyword">object</span>?&gt;&gt;();</span>
+<span class="code-line">        <span class="code-keyword">var</span> leaf = minKey != <span class="code-keyword">null</span> ? <span class="code-function">FindLeafNode</span>(minKey) : <span class="code-function">GetFirstLeaf</span>();</span>
+<span class="code-line">        </span>
+<span class="code-line">        <span class="code-keyword">while</span> (leaf != <span class="code-keyword">null</span>)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            <span class="code-keyword">for</span> (<span class="code-keyword">int</span> i = <span class="code-number">0</span>; i &lt; leaf.Keys.Count; i++)</span>
+<span class="code-line">            {</span>
+<span class="code-line">                <span class="code-keyword">var</span> key = leaf.Keys[i];</span>
+<span class="code-line">                </span>
+<span class="code-line">                <span class="code-keyword">if</span> (minKey != <span class="code-keyword">null</span> &amp;&amp; _comparer.<span class="code-function">Compare</span>(key, minKey) &lt; <span class="code-number">0</span>)</span>
+<span class="code-line">                    <span class="code-keyword">continue</span>;</span>
+<span class="code-line">                    </span>
+<span class="code-line">                <span class="code-keyword">if</span> (maxKey != <span class="code-keyword">null</span> &amp;&amp; _comparer.<span class="code-function">Compare</span>(key, maxKey) &gt; <span class="code-number">0</span>)</span>
+<span class="code-line">                    <span class="code-keyword">return</span> results;</span>
+<span class="code-line">                    </span>
+<span class="code-line">                results.<span class="code-function">Add</span>(<span class="code-keyword">new</span> KeyValuePair&lt;<span class="code-keyword">object</span>, <span class="code-keyword">object</span>?&gt;(key, leaf.Values[i]));</span>
+<span class="code-line">            }</span>
+<span class="code-line">            </span>
+<span class="code-line">            leaf = leaf.Next;</span>
+<span class="code-line">        }</span>
+<span class="code-line">        </span>
+<span class="code-line">        <span class="code-keyword">return</span> results;</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Return an <span class="term" data-definition="A stream of items you can loop over — the caller grabs them one by one. Think 'a list you can walk through,' without forcing everything into memory at once.">IEnumerable</span> of key-value pairs between <code>minKey</code> and <code>maxKey</code>.</p>
+              <p class="tl">Find the leaf where <code>minKey</code> lives (or the leftmost leaf if no lower bound). This is the "flip to S" step.</p>
+              <p class="tl">Now walk forward through the linked leaves — no going back to the root. This is the whole reason the tree is linked.</p>
+              <p class="tl">Skip anything below <code>minKey</code>. If we pass <code>maxKey</code>, we're done — bail out.</p>
+              <p class="tl">Otherwise, collect the pair and keep going.</p>
+              <p class="tl">Move to the next leaf via the <code>Next</code> pointer. That's the staple between pages doing its job.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">i</div>
+          <div class="callout-content">
+            <strong class="callout-title">Fanout = how wide each node is.</strong>
+            <p>This tree uses <span class="term" data-definition="The maximum number of keys a node can hold before it has to split. Higher order means wider, shallower trees.">order</span>-4 nodes (3 keys, 4 children). Real databases use order-100+. Higher <span class="term" data-definition="How many children each internal node has. A shallow, wide tree means fewer levels to walk — each lookup touches fewer disk pages.">fanout</span> means a shallower tree, which means fewer disk reads per lookup.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 4: Pattern cards — the three operations                -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The three operations, at a glance</h2>
+
+        <p>Every query the database ever runs against an index comes down to one of these three moves.</p>
+
+        <div class="pattern-cards">
+
+          <div class="pattern-card" style="border-top: 3px solid #2A7B9B;">
+            <div class="pattern-icon" style="background: #2A7B9B; color: white; width:40px; height:40px; border-radius: var(--radius-full); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-weight:700;">S</div>
+            <h4 class="pattern-title">Search &mdash; <span class="term" data-definition="Cost that grows with the logarithm of input size. Doubling the data only adds one more step. A million items? ~20 steps.">O(log n)</span></h4>
+            <p class="pattern-desc">Climb down the tabs to the right page, then <span class="term" data-definition="A lookup trick: check the middle of a sorted list, then halve the remaining range on each step. Finds any item in a list of a million in about 20 comparisons.">binary-search</span> inside the leaf. A million rows = about 20 comparisons.</p>
+          </div>
+
+          <div class="pattern-card" style="border-top: 3px solid #2A7B9B;">
+            <div class="pattern-icon" style="background: #2A7B9B; color: white; width:40px; height:40px; border-radius: var(--radius-full); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-weight:700;">I</div>
+            <h4 class="pattern-title">Insert + Split</h4>
+            <p class="pattern-desc">When a leaf overflows, cut it in half and <span class="term" data-definition="Move a middle key up to the parent node when a leaf or internal node gets too full. It's how the tree grows taller without getting out of balance.">promote</span> the middle key to the parent. A <span class="term" data-definition="When a full node divides into two smaller nodes because one more key would exceed its capacity. The middle key gets pushed up a level.">split</span> makes the tree grow upward, not downward.</p>
+          </div>
+
+          <div class="pattern-card" style="border-top: 3px solid #2A7B9B;">
+            <div class="pattern-icon" style="background: #2A7B9B; color: white; width:40px; height:40px; border-radius: var(--radius-full); display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-weight:700;">R</div>
+            <h4 class="pattern-title">Range scan</h4>
+            <p class="pattern-desc">Find the starting leaf, then walk the <span class="term" data-definition="A chain of items where each one holds a pointer to the next (and here, the previous) one. Walking it is a straight march, no lookups.">linked list</span> of stapled leaves sideways until you pass the upper bound.</p>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 5: Build the tree — numbered step cards                -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Build the tree: inserting 10, 20, 30, 40</h2>
+
+        <p>Let's watch a tree grow from scratch, with <span class="term" data-definition="The maximum number of keys a node can hold before it has to split. Higher order means wider, shallower trees.">order</span> = 3 (so a leaf can hold 2 keys before it has to <span class="term" data-definition="When a full node divides into two smaller nodes because one more key would exceed its capacity. The middle key gets pushed up a level.">split</span>). Four inserts, four snapshots.</p>
+
+        <div class="step-cards">
+
+          <div class="step-card">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <strong>Insert 10</strong>
+              <p>The tree starts as a single leaf. 10 goes in. Nothing else to do.</p>
+              <div style="margin-top: var(--space-3); display:flex; justify-content:flex-start;">
+                <div style="border:2px solid var(--color-accent); padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface);">
+                  [ 10 ]
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <strong>Insert 20</strong>
+              <p>Still fits in the same leaf. Keys stay sorted.</p>
+              <div style="margin-top: var(--space-3); display:flex; justify-content:flex-start;">
+                <div style="border:2px solid var(--color-accent); padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface);">
+                  [ 10, 20 ]
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <strong>Insert 30 &mdash; first split!</strong>
+              <p>The leaf would hold 3 keys (over capacity). <span class="term" data-definition="When a full node divides into two smaller nodes because one more key would exceed its capacity. The middle key gets pushed up a level.">Split</span> it: left leaf keeps <code>[10]</code>, right leaf gets <code>[20, 30]</code>. We <span class="term" data-definition="Move a middle key up to the parent node when a leaf or internal node gets too full. It's how the tree grows taller without getting out of balance.">promote</span> <code>20</code> to a brand-new internal node that becomes the root.</p>
+              <div style="margin-top: var(--space-4);">
+                <div style="display:flex; justify-content:center; margin-bottom: var(--space-2);">
+                  <div style="border:2px solid var(--color-accent); padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface);">
+                    [ 20 ]
+                  </div>
+                </div>
+                <div style="display:flex; justify-content:center; font-family:var(--font-mono); color:var(--color-accent);">
+                  <span style="padding: 0 var(--space-5);">&#47;</span>
+                  <span style="padding: 0 var(--space-5);">&#92;</span>
+                </div>
+                <div style="display:flex; justify-content:center; gap: var(--space-3); align-items:center;">
+                  <div style="border:2px solid var(--color-accent); padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface);">
+                    [ 10 ]
+                  </div>
+                  <span style="color:#D4A843; font-family:var(--font-mono); font-size:var(--text-xs);">next--&gt;</span>
+                  <div style="border:2px solid var(--color-accent); padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface);">
+                    [ 20, 30 ]
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step-card">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <strong>Insert 40</strong>
+              <p>Walk the root: <code>40 &gt;= 20</code>, so go right. The right leaf already has <code>[20, 30]</code> and now needs <code>40</code> &mdash; another split! Left stays <code>[20]</code>, right becomes <code>[30, 40]</code>, and <code>30</code> gets promoted up to the root. The root now holds two keys.</p>
+              <div style="margin-top: var(--space-4);">
+                <div style="display:flex; justify-content:center; margin-bottom: var(--space-2);">
+                  <div style="border:2px solid var(--color-accent); padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface);">
+                    [ 20 | 30 ]
+                  </div>
+                </div>
+                <div style="display:flex; justify-content:center; font-family:var(--font-mono); color:var(--color-accent); font-size:var(--text-lg);">
+                  <span style="padding: 0 var(--space-6);">&#47;</span>
+                  <span style="padding: 0 var(--space-6);">|</span>
+                  <span style="padding: 0 var(--space-6);">&#92;</span>
+                </div>
+                <div style="display:flex; justify-content:center; gap: var(--space-2); align-items:center; flex-wrap:wrap;">
+                  <div style="border:2px solid var(--color-accent); padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface);">
+                    [ 10 ]
+                  </div>
+                  <span style="color:#D4A843; font-family:var(--font-mono); font-size:var(--text-xs);">--&gt;</span>
+                  <div style="border:2px solid var(--color-accent); padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface);">
+                    [ 20 ]
+                  </div>
+                  <span style="color:#D4A843; font-family:var(--font-mono); font-size:var(--text-xs);">--&gt;</span>
+                  <div style="border:2px solid var(--color-accent); padding:var(--space-2) var(--space-4); border-radius:var(--radius-sm); font-family:var(--font-mono); background:var(--color-surface);">
+                    [ 30, 40 ]
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <p style="margin-top: var(--space-8);">Here's the insert code that orchestrates all that. It's surprisingly short &mdash; the recursion lives inside <code>SplitLeafNode</code>, which can bubble splits all the way up to the root.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+<pre><code><span class="code-line"><span class="code-keyword">public void</span> <span class="code-function">Insert</span>(<span class="code-keyword">object</span> key, <span class="code-keyword">object</span>? value)</span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">lock</span> (_lockObject)</span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">var</span> leaf = <span class="code-function">FindLeafNode</span>(key);</span>
+<span class="code-line">        <span class="code-function">InsertIntoLeaf</span>(leaf, key, value);</span>
+<span class="code-line">        </span>
+<span class="code-line">        <span class="code-keyword">if</span> (leaf.KeyCount &gt; _order - <span class="code-number">1</span>)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            <span class="code-function">SplitLeafNode</span>(leaf);</span>
+<span class="code-line">        }</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Lock so no other thread can modify the tree while we're rearranging it.</p>
+              <p class="tl">Walk down from the root to find the one leaf where this key belongs.</p>
+              <p class="tl">Drop the key and value into that leaf, keeping the list sorted.</p>
+              <p class="tl">If the leaf now holds more keys than allowed, <span class="term" data-definition="When a full node divides into two smaller nodes because one more key would exceed its capacity. The middle key gets pushed up a level.">split</span> it &mdash; and that split may cascade upward.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- SCREEN 6: Quiz                                                -->
+      <!-- ============================================================ -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Quick check &mdash; apply what you've seen</h2>
+        <p>Four short scenarios. There's no score &mdash; the point is to stretch the ideas, not memorize them.</p>
+
+        <div class="quiz-container" id="quiz-module3">
+
+          <!-- Q1: Scenario -->
+          <div class="quiz-question-block"
+               data-correct="option-c"
+               data-explanation-right="Exactly. Range finds the leaf holding key 1000, then walks the linked leaves forward until a key exceeds 2000. No full scan, no per-row tree lookup — a single descent plus a straight walk."
+               data-explanation-wrong="Think about the shape of the query. It's asking for every row in a span. Search jumps to one key. A full scan ignores the tree entirely. What does the leaf chain exist for?">
+            <h3 class="quiz-question">Your query is <code>WHERE user_id BETWEEN 1000 AND 2000</code>. Which B+ tree operation runs, and why does it stay cheap?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>A &mdash; <code>Search</code> is called 1001 times, once per ID in the range.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>B &mdash; A full scan of every leaf, filtering out anything outside the bounds.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>C &mdash; <code>Range</code>: find the leaf containing 1000, then walk forward through linked leaves until a key exceeds 2000.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <!-- Q2: Debugging -->
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Right. Each split pushes a key upward; enough splits and the tree gains a level. A taller tree means more hops per search. A production database would rebalance periodically; this minimal implementation doesn't."
+               data-explanation-wrong="The tree itself isn't buggy — it's doing exactly what it was designed to do. Look at what changes structurally when you keep inserting: levels get added. What does adding a level cost every future search?">
+            <h3 class="quiz-question">After many inserts your tree has become noticeably taller, and searches feel slower. What happened?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>A &mdash; The leaf chain broke, so <code>Next</code> pointers send searches in circles.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>B &mdash; Lots of splits promoted keys upward, adding levels. More levels = more comparisons per lookup.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>C &mdash; The comparer got slower as more types were added to the tree.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <!-- Q3: Architecture -->
+          <div class="quiz-question-block"
+               data-correct="option-a"
+               data-explanation-right="Exactly — Previous is future-proofing. A reverse iterator (or an ORDER BY DESC query) walks the same chain backward. Building the pointer now costs almost nothing; adding it later would mean rewriting every split routine."
+               data-explanation-wrong="The code today only reads Next. So why pay the memory and bookkeeping cost for Previous? Think about what kinds of queries would want to walk the leaves in the opposite direction.">
+            <h3 class="quiz-question">Leaves have both <code>Next</code> AND <code>Previous</code> pointers, but the current <code>Range</code> method only uses <code>Next</code>. Why keep <code>Previous</code>?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>A &mdash; Future-proofing for reverse iteration and <code>ORDER BY DESC</code> queries.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>B &mdash; The compiler requires doubly linked lists for type safety in C#.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>C &mdash; <code>Previous</code> is how <code>Insert</code> finds the parent node.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <!-- Q4: Tracing -->
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Good trace. After inserting 5, 15, 25, the first split leaves you with root [15] and leaves [5] → [15, 25]. Inserting 35 overflows the right leaf to [15, 25, 35], so it splits again: [15] stays, [25, 35] forms, and 25 gets promoted — making the root [15, 25]."
+               data-explanation-wrong="Walk it step by step with order = 3 (max 2 keys per leaf). Each time a leaf would hold 3 keys, it splits and pushes the middle key up. Try sketching it on paper — you'll see the cascade.">
+            <h3 class="quiz-question">Insert <code>5, 15, 25, 35</code> in order into an empty order-3 tree (max 2 keys per leaf). What does the root look like after the last insert?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>A &mdash; Root is a leaf with <code>[5, 15, 25, 35]</code>; nothing splits because they're sorted.</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>B &mdash; Root is internal with keys <code>[15, 25]</code>, over three leaves <code>[5]</code>, <code>[15]</code>, <code>[25, 35]</code>.</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>C &mdash; Root is internal with key <code>[25]</code>; left leaf <code>[5, 15]</code>, right leaf <code>[25, 35]</code>.</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module3')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module3')">Try Again</button>
+        </div>
+
+        <p style="margin-top: var(--space-10); color: var(--color-text-secondary);">Coming up next: now that you know the tree exists, Module 4 shows how the <span class="term" data-definition="A C# feature that lets you write database-like queries directly in code (Where, Select, OrderBy). Behind the scenes, a provider decides whether to use an index or scan everything.">LINQ</span> query planner decides when to <em>use</em> it &mdash; and when it's cheaper to just read every row.</p>
+      </section>
+
+    </div>
+  </div>
+</section>

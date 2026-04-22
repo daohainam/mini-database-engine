@@ -1,0 +1,428 @@
+<section class="module" id="module-1" style="background: var(--color-bg-warm)">
+  <div class="module-content">
+
+    <header class="module-header animate-in">
+      <span class="module-number">01</span>
+      <h1 class="module-title">What Actually Happens When You <code>INSERT</code> a Row?</h1>
+      <p class="module-subtitle">One innocent line of code. Seven layers cooperating in milliseconds. Let's pull back the curtain.</p>
+    </header>
+
+    <div class="module-body">
+
+      <!-- =========================================================
+           SCREEN 1 — THE HOOK: one line, a hidden world
+           ========================================================= -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">One line of code. A lot happening underneath.</h2>
+
+        <p>You write this. It looks harmless:</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line">db.<span class="code-function">Insert</span>(<span class="code-string">"Users"</span>, row);</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">WHAT IT LOOKS LIKE</span>
+            <div class="translation-lines">
+              <p class="tl">"Hey database, stick this row into the Users table. Thanks."</p>
+              <p class="tl">And that's all you said. Easy. Boring, even.</p>
+            </div>
+          </div>
+        </div>
+
+        <p>Under the hood, it's anything but boring. Picture a <span class="term" data-definition="The core piece of software that stores, retrieves, and protects your data. Think of it as the librarian plus the library plus the security guard — all rolled into one program.">database engine</span> as a <strong>busy hospital ER</strong>. Your row is a new patient. It has to pass through triage, get logged in the official intake book <em>before</em> anyone touches anything permanent, and only then get filed into the ward roster. If the power flickers mid-admission, the intake book tells us exactly who was officially checked in.</p>
+
+        <div class="callout callout-info">
+          <div class="callout-icon">?</div>
+          <div class="callout-content">
+            <strong class="callout-title">Why you should care</strong>
+            <p>When you tell an AI "add a column" or "make this query faster," the AI needs to know which layer of the database your change belongs in. If you can name the layers, you can steer the AI — instead of getting generic, half-right code.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================
+           SCREEN 2 — HERO VISUAL: the 5 layers
+           ========================================================= -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The 5 layers, at a glance</h2>
+
+        <p>A database isn't one thing. It's a <strong>stack of specialized layers</strong>, each solving one narrow problem. Meet the cast:</p>
+
+        <div class="icon-rows">
+          <div class="icon-row">
+            <div class="icon-circle" style="background: var(--color-actor-1); color: white;">API</div>
+            <div>
+              <strong>The Public API</strong>
+              <p>The front door. <code>db.Insert(...)</code>, <code>db.CreateTable(...)</code> — the handful of methods you actually call as a developer.</p>
+            </div>
+          </div>
+          <div class="icon-row">
+            <div class="icon-circle" style="background: var(--color-actor-2); color: white;">TBL</div>
+            <div>
+              <strong>Table</strong>
+              <p>Knows the shape of your data (the <span class="term" data-definition="A schema is the blueprint of a table — which columns exist, what type each one holds, and which ones can be empty. Like the form fields on a paper application.">schema</span>) and enforces rules like "no duplicate IDs" and "this column can't be empty."</p>
+            </div>
+          </div>
+          <div class="icon-row">
+            <div class="icon-circle" style="background: var(--color-actor-3); color: white;">TX</div>
+            <div>
+              <strong>Transaction + WAL</strong>
+              <p>The intake log. A <span class="term" data-definition="Write-Ahead Log — a tiny journal where every change is written to disk BEFORE the main data files are touched. That way, if the power dies, we can replay the journal and recover. Module 5 goes deep on this.">WAL</span> writes every change to disk <em>before</em> the real data is modified — so a crash can never lose a committed write.</p>
+            </div>
+          </div>
+          <div class="icon-row">
+            <div class="icon-circle" style="background: var(--color-actor-4); color: white;">IDX</div>
+            <div>
+              <strong>B+ Tree Index</strong>
+              <p>A fancy sorted filing cabinet. The <span class="term" data-definition="A B+ tree is a balanced tree structure that keeps rows sorted by a key and lets you find any row in a few hops instead of scanning every file. Module 3 goes deep on this.">B+ tree</span> is what lets you find row #4,829,117 in a few milliseconds instead of reading millions of rows one by one.</p>
+            </div>
+          </div>
+          <div class="icon-row">
+            <div class="icon-circle" style="background: var(--color-actor-5); color: white;">PG</div>
+            <div>
+              <strong>Page-based Storage</strong>
+              <p>The actual bytes on disk, organized into fixed-size blocks called <span class="term" data-definition="A page is a fixed-size chunk (usually 4KB or 8KB) that the database reads and writes as one unit. Disks are happier moving big blocks than tiny bytes. Module 2 goes deep on this.">pages</span>. This is where your data physically lives.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout callout-accent">
+          <div class="callout-icon">!</div>
+          <div class="callout-content">
+            <strong class="callout-title">Separation of concerns</strong>
+            <p>Each layer has one job. Durability is the WAL's job. Sort order is the index's job. Disk I/O is the storage engine's job. Confusing these is the #1 bug in amateur database code — and the reason you should care which layer you're touching.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================
+           SCREEN 3 — THE PUBLIC API (code translation #1)
+           ========================================================= -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Meet the public API</h2>
+
+        <p>This is the entire conversation you have with the database from your application code. Everything else in this course is what happens <em>behind</em> these lines.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line"><span class="code-keyword">using var</span> db = <span class="code-keyword">new</span> <span class="code-function">Database</span>(<span class="code-string">"mydata.mde"</span>, cacheSize: <span class="code-number">100</span>, useMemoryMappedFile: <span class="code-keyword">false</span>);</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">var</span> columns = <span class="code-keyword">new</span> List&lt;ColumnDefinition&gt;</span>
+<span class="code-line">{</span>
+<span class="code-line">    <span class="code-keyword">new</span> <span class="code-function">ColumnDefinition</span>(<span class="code-string">"Id"</span>, DataType.Int, <span class="code-keyword">false</span>),</span>
+<span class="code-line">    <span class="code-keyword">new</span> <span class="code-function">ColumnDefinition</span>(<span class="code-string">"Name"</span>, DataType.String),</span>
+<span class="code-line">    <span class="code-keyword">new</span> <span class="code-function">ColumnDefinition</span>(<span class="code-string">"Age"</span>, DataType.Int)</span>
+<span class="code-line">};</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">var</span> table = db.<span class="code-function">CreateTable</span>(<span class="code-string">"Users"</span>, columns, primaryKeyColumn: <span class="code-string">"Id"</span>);</span>
+<span class="code-line"></span>
+<span class="code-line"><span class="code-keyword">var</span> row = <span class="code-keyword">new</span> <span class="code-function">DataRow</span>(table.Schema);</span>
+<span class="code-line">row[<span class="code-string">"Id"</span>] = <span class="code-number">1</span>;</span>
+<span class="code-line">row[<span class="code-string">"Name"</span>] = <span class="code-string">"Alice"</span>;</span>
+<span class="code-line">row[<span class="code-string">"Age"</span>] = <span class="code-number">30</span>;</span>
+<span class="code-line"></span>
+<span class="code-line">db.<span class="code-function">Insert</span>(<span class="code-string">"Users"</span>, row);</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Open (or create) a database file called <code>mydata.mde</code>. Cache 100 pages in memory for speed. <code>using</code> makes sure the file closes cleanly when we're done.</p>
+              <p class="tl">Sketch out what a "User" looks like: three fields.</p>
+              <p class="tl"><code>Id</code> is an integer, and the <code>false</code> means it can't be empty.</p>
+              <p class="tl"><code>Name</code> is text. <code>Age</code> is an integer. Simple stuff.</p>
+              <p class="tl">Create the Users table with <code>Id</code> as its <span class="term" data-definition="The primary key is the one column whose value uniquely identifies each row — like a social security number for rows. No two rows can share the same primary key.">primary key</span> — the unique identifier for each row.</p>
+              <p class="tl">Make an empty row that fits the table's shape.</p>
+              <p class="tl">Fill it in: Alice, ID 1, age 30.</p>
+              <p class="tl">Hand it to the database. This is the one innocent line we started with.</p>
+            </div>
+          </div>
+        </div>
+
+        <p>Notice there are really only <strong>four verbs</strong> you need to know at this level: open a database, define columns, make a row, insert it. Everything else this course teaches is what the database does <em>for</em> you behind those four verbs.</p>
+      </section>
+
+      <!-- =========================================================
+           SCREEN 4 — DATA FLOW ANIMATION (the journey)
+           ========================================================= -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">The journey of one row</h2>
+
+        <p>Click <strong>Next Step</strong> to watch your row travel through the layers. Each stop has exactly one job.</p>
+
+        <div class="flow-animation" data-steps='[
+          {"highlight":"flow-actor-1","label":"Your code calls db.Insert with the Users table name and the row"},
+          {"highlight":"flow-actor-2","label":"Database looks up the Users table by name","packet":true,"from":"actor-1","to":"actor-2"},
+          {"highlight":"flow-actor-3","label":"Table validates the row against its schema (types, nulls, primary key)","packet":true,"from":"actor-2","to":"actor-3"},
+          {"highlight":"flow-actor-3","label":"Table serializes the row into a compact byte array"},
+          {"highlight":"flow-actor-4","label":"Bytes are appended to the WAL — this is the durability point","packet":true,"from":"actor-3","to":"actor-4"},
+          {"highlight":"flow-actor-5","label":"Bytes are inserted into the B+ Tree by primary key","packet":true,"from":"actor-4","to":"actor-5"},
+          {"highlight":"flow-actor-1","label":"Success returned to your calling code","packet":true,"from":"actor-5","to":"actor-1"}
+        ]'>
+          <div class="flow-actors">
+            <div class="flow-actor" id="flow-actor-1">
+              <div class="flow-actor-icon" style="background: var(--color-actor-1); color: white;">You</div>
+              <span>Your Code</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-2">
+              <div class="flow-actor-icon" style="background: var(--color-actor-2); color: white;">DB</div>
+              <span>Database</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-3">
+              <div class="flow-actor-icon" style="background: var(--color-actor-3); color: white;">TBL</div>
+              <span>Table</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-4">
+              <div class="flow-actor-icon" style="background: var(--color-actor-4); color: white;">WAL</div>
+              <span>WAL</span>
+            </div>
+            <div class="flow-actor" id="flow-actor-5">
+              <div class="flow-actor-icon" style="background: var(--color-actor-5); color: white;">B+T</div>
+              <span>B+ Tree</span>
+            </div>
+          </div>
+
+          <div class="flow-packet" id="flow-packet"></div>
+
+          <div class="flow-step-label" id="flow-label">Click "Next Step" to begin your row's journey.</div>
+
+          <div class="flow-controls">
+            <button class="btn flow-next-btn">Next Step</button>
+            <button class="btn flow-reset-btn">Restart</button>
+            <span class="flow-progress"></span>
+          </div>
+        </div>
+
+        <p>Prefer to read it at your own pace? Here are the same seven steps as cards:</p>
+
+        <div class="step-cards">
+          <div class="step-card">
+            <div class="step-num">1</div>
+            <div class="step-body">
+              <strong>Your code calls <code>db.Insert</code></strong>
+              <p>A <span class="term" data-definition="API stands for Application Programming Interface — the specific set of methods and verbs you're allowed to call from outside a library. The 'steering wheel' you get, without seeing the engine.">API</span> call from your application, passing the table name and a row object.</p>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">2</div>
+            <div class="step-body">
+              <strong>Database finds the Table</strong>
+              <p>The Database object keeps a dictionary of tables by name. It hands control to the right Table instance.</p>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">3</div>
+            <div class="step-body">
+              <strong>Table validates the row</strong>
+              <p>Does every column match its expected type? Are non-null fields actually present? Is the primary key unique?</p>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">4</div>
+            <div class="step-body">
+              <strong>Row is serialized to bytes</strong>
+              <p><span class="term" data-definition="To serialize is to turn a structured object (like a row with three fields) into a flat sequence of bytes that can be written to disk or sent over the network. The reverse is 'deserialize.'">Serializing</span> turns the row object into a compact byte array — the only form disks and logs actually understand.</p>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">5</div>
+            <div class="step-body">
+              <strong>Bytes appended to the WAL</strong>
+              <p>This is the <strong>durability point</strong>. Once the WAL entry is on disk, the write is officially survivable — even if the power dies right now, recovery can replay it.</p>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">6</div>
+            <div class="step-body">
+              <strong>Bytes inserted into the B+ Tree</strong>
+              <p>The <span class="term" data-definition="An index is a secondary data structure that makes lookups fast. Like the alphabetical tabs on a dictionary — you could find the word without them, but you'd hate it.">index</span> places the new entry in sorted order by primary key, so future lookups by ID are fast.</p>
+            </div>
+          </div>
+          <div class="step-card">
+            <div class="step-num">7</div>
+            <div class="step-body">
+              <strong>Success returns to you</strong>
+              <p>Control flows back up the stack. Your single line of code finishes. Alice is now safely in the database.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================
+           SCREEN 5 — INSIDE TABLE.INSERT (code translation #2)
+           ========================================================= -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Zooming in: the real <code>Table.Insert</code> code</h2>
+
+        <p>Here's the actual C# method that orchestrates steps 3 through 6. This is roughly 20 lines of <span class="term" data-definition="C# (pronounced 'C sharp') is Microsoft's main programming language. It's statically typed, object-oriented, and runs on .NET. Think of it as Java's cousin.">C#</span> from <code>MiniDatabaseEngine/Table.cs</code>. Don't be intimidated — we'll translate each line.</p>
+
+        <div class="translation-block animate-in">
+          <div class="translation-code">
+            <span class="translation-label">CODE</span>
+            <pre><code><span class="code-line"><span class="code-keyword">public void</span> <span class="code-function">Insert</span>(DataRow row, Transaction.Transaction? transaction = <span class="code-keyword">null</span>)</span>
+<span class="code-line">{</span>
+<span class="code-line">    _lock.<span class="code-function">EnterWriteLock</span>();</span>
+<span class="code-line">    <span class="code-keyword">try</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        <span class="code-keyword">var</span> key = <span class="code-function">GetPrimaryKey</span>(row);</span>
+<span class="code-line">        <span class="code-function">ValidateRowForWrite</span>(row);</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">var</span> keyExists = _index.<span class="code-function">Search</span>(key) != <span class="code-keyword">null</span>;</span>
+<span class="code-line">        <span class="code-keyword">var</span> keyPendingInTransaction = transaction?.<span class="code-function">HasBufferedValueForKey</span>(_schema.TableName, key, <span class="code-function">GetPrimaryKeyDataType</span>()) ?? <span class="code-keyword">false</span>;</span>
+<span class="code-line">        <span class="code-keyword">if</span> (keyExists || keyPendingInTransaction)</span>
+<span class="code-line">            <span class="code-keyword">throw new</span> <span class="code-function">InvalidOperationException</span>(<span class="code-string">$"Duplicate primary key value '{key}'."</span>);</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">var</span> serialized = <span class="code-function">SerializeRow</span>(row);</span>
+<span class="code-line"></span>
+<span class="code-line">        <span class="code-keyword">if</span> (transaction != <span class="code-keyword">null</span>)</span>
+<span class="code-line">        {</span>
+<span class="code-line">            transaction.<span class="code-function">LogInsert</span>(_schema.TableName, key, serialized);</span>
+<span class="code-line">            _nextRowId++;</span>
+<span class="code-line">            <span class="code-keyword">return</span>;</span>
+<span class="code-line">        }</span>
+<span class="code-line"></span>
+<span class="code-line">        _index.<span class="code-function">Insert</span>(key, serialized);</span>
+<span class="code-line">        _nextRowId++;</span>
+<span class="code-line">    }</span>
+<span class="code-line">    <span class="code-keyword">finally</span></span>
+<span class="code-line">    {</span>
+<span class="code-line">        _lock.<span class="code-function">ExitWriteLock</span>();</span>
+<span class="code-line">    }</span>
+<span class="code-line">}</span></code></pre>
+          </div>
+          <div class="translation-english">
+            <span class="translation-label">PLAIN ENGLISH</span>
+            <div class="translation-lines">
+              <p class="tl">Public method <code>Insert</code> takes a row, and optionally a transaction (if you're batching multiple writes together).</p>
+              <p class="tl">Grab an exclusive write <span class="term" data-definition="A lock is a coordination tool that says 'only one thread at a time.' Like a bathroom door — you go in, you latch it, nobody else gets in until you unlatch. Module 6 covers concurrency.">lock</span>. No other thread can modify this table until we're done.</p>
+              <p class="tl"><code>try</code> starts a block that guarantees cleanup happens even if something fails.</p>
+              <p class="tl">Pull the primary key value out of the row (e.g., <code>1</code> for Alice).</p>
+              <p class="tl">Validate: does every field match the schema? Missing required fields? Wrong types? Fail loudly if so.</p>
+              <p class="tl">Is this key already in the index? Search returns a value if yes, <code>null</code> if not.</p>
+              <p class="tl">Is this key <em>pending</em> in an open transaction that hasn't committed yet? The <code>?.</code> safely skips if there's no transaction. The <code>?? false</code> defaults to "no" when the answer is missing.</p>
+              <p class="tl">Either way — already committed OR pending — reject as a duplicate.</p>
+              <p class="tl">Throw a clear error with the offending key value. No silent failures.</p>
+              <p class="tl">Turn the row object into a byte array, ready to be stored.</p>
+              <p class="tl">If we're inside a transaction, don't touch the real index yet…</p>
+              <p class="tl">…instead, park the change in the transaction's WAL buffer and bump the row ID counter. We'll apply it on commit.</p>
+              <p class="tl">Otherwise — no transaction — write it straight into the B+ Tree index now.</p>
+              <p class="tl"><code>finally</code> always runs, success or failure.</p>
+              <p class="tl">Release the write lock. Other threads can now proceed.</p>
+            </div>
+          </div>
+        </div>
+
+        <p>Notice how many layers this <em>one method</em> coordinates: lock manager, schema validator, index, serializer, transaction buffer. That orchestration is the whole reason this course exists.</p>
+      </section>
+
+      <!-- =========================================================
+           SCREEN 6 — QUIZ
+           ========================================================= -->
+      <section class="screen animate-in">
+        <h2 class="screen-heading">Test your intuition</h2>
+
+        <p>No memorization. Each question is a real scenario you might hit when debugging or talking to an AI about a database. Think it through, then pick.</p>
+
+        <div class="quiz-container" id="quiz-module1">
+
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Exactly. The Table layer also checks HasBufferedValueForKey — so even after a rollback, if the transaction buffer hasn't been cleared, an in-flight duplicate can still trip the check. The bug is almost always in how the transaction lifecycle is torn down, not in the user's code."
+               data-explanation-wrong="Think about where the duplicate check actually lives. The B+ Tree only knows about committed writes — it wouldn't report duplicates for rolled-back transactions. The layer that tracks pending, not-yet-committed writes is the one to look at.">
+            <h3 class="quiz-question">Users report duplicate-key errors even after <em>rolling back</em> a transaction. Which layer's check is most likely firing?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The B+ Tree index — it already committed the value</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The Table's <code>HasBufferedValueForKey</code> — in-flight inserts in the same txn still count</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The page storage layer — it rejects duplicate bytes on disk</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-c"
+               data-explanation-right="Yes! Compression belongs at the storage/serialization layer. If you compress at the API layer, the bytes that reach the WAL are already compressed — fine — but if compression fails or corrupts, recovery can't inspect what was meant to be written. Keep durability and encoding as separate concerns."
+               data-explanation-wrong="That layer doesn't own the byte representation. Remember the separation-of-concerns rule: who actually produces the bytes that hit disk? Compress at that stage, so every layer above it is unaffected.">
+            <h3 class="quiz-question">You want to add compression for stored rows — smaller files, faster disk reads. Which layer should own the compression logic?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The public API — compress before calling <code>db.Insert</code></span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The Table — compress right after validation</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The storage / serialization layer — compress the bytes that hit disk</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-a"
+               data-explanation-right="Correct. That's a durability violation. The WAL exists precisely to be flushed (fsync'd) to disk before returning success. If commit returned before the flush finished, the OS could still have the bytes in a volatile buffer when the power died. This is the #1 reason real databases obsess over fsync."
+               data-explanation-wrong="Look for the layer whose single job is to make writes survive crashes. A missing index entry wouldn't cause data to disappear — it would cause lookups to miss. A corrupted page is possible but rarer. The likeliest culprit is the durability handshake itself.">
+            <h3 class="quiz-question">A write "succeeded" (your code got a success return), but the row was gone after a server crash. What's the most likely cause?</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>Commit didn't flush the WAL to disk before returning — durability was violated</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The B+ Tree lost the row's index entry</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>The page file was corrupted by the crash</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <div class="quiz-question-block"
+               data-correct="option-b"
+               data-explanation-right="Right on. The key is extracted first (to check for duplicates), then the row is serialized to bytes, then those bytes are logged to the WAL for durability, and finally they're written into pages on disk. The WAL always precedes the real data file — that's the 'write-ahead' in its name."
+               data-explanation-wrong="Remember the WAL's core promise: its entry hits disk BEFORE the real data pages are touched. And the primary key has to be known first, because we need it for the duplicate check. Reorder with those two rules in mind.">
+            <h3 class="quiz-question">Put these four events in the order they happen during an insert:<br>
+              (a) bytes persisted in a page on disk &nbsp; (b) row serialized to bytes &nbsp; (c) primary key extracted &nbsp; (d) WAL entry appended</h3>
+            <div class="quiz-options">
+              <button class="quiz-option" data-value="option-a" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>a &rarr; b &rarr; c &rarr; d</span>
+              </button>
+              <button class="quiz-option" data-value="option-b" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>c &rarr; b &rarr; d &rarr; a</span>
+              </button>
+              <button class="quiz-option" data-value="option-c" onclick="selectOption(this)">
+                <div class="quiz-option-radio"></div>
+                <span>b &rarr; c &rarr; a &rarr; d</span>
+              </button>
+            </div>
+            <div class="quiz-feedback"></div>
+          </div>
+
+          <button class="quiz-check-btn" onclick="checkQuiz('quiz-module1')">Check Answers</button>
+          <button class="quiz-reset-btn" onclick="resetQuiz('quiz-module1')">Try Again</button>
+        </div>
+
+        <p style="margin-top: var(--space-8);">Up next: <strong>Module 2 — Pages &amp; Extents, the storage floor plan.</strong> We'll zoom all the way down to the bottom of the stack and see how the database physically lays out bytes on disk. Once you know the floor plan, the rest of the building makes sense.</p>
+      </section>
+
+    </div>
+  </div>
+</section>
