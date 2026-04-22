@@ -10,7 +10,7 @@ public class RecoveryTests : IDisposable
     public RecoveryTests()
     {
         _testDbPath = Path.Combine(Path.GetTempPath(), $"test_recovery_{Guid.NewGuid()}.mde");
-        _filesToCleanup = new List<string>();
+        _filesToCleanup = [];
     }
 
     [Fact]

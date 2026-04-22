@@ -81,7 +81,7 @@ public class ImprovementTests
     public void DataRow_Integer_Indexer_Validates_Bounds()
     {
         var schema = new TableSchema("Test",
-            new List<ColumnDefinition> { new("Id", DataType.Int) }, "Id");
+            [new("Id", DataType.Int)], "Id");
         var row = new DataRow(schema);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => row[-1]);
@@ -161,8 +161,10 @@ public class ImprovementTests
         // Add some pages
         for (int i = 0; i < 10; i++)
         {
-            var page = new Page(i);
-            page.IsDirty = (i % 2 == 0);
+            var page = new Page(i)
+            {
+                IsDirty = (i % 2 == 0)
+            };
             cache.Put(i, page);
         }
 
@@ -487,6 +489,65 @@ public class ImprovementTests
     }
 
     [Fact]
+    public void WALEntry_Deserialize_Rejects_Overlong_Table_Name_Length()
+    {
+        using var ms = new MemoryStream();
+        using (var writer = new BinaryWriter(ms, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(1L);
+            writer.Write((int)WALOperationType.Insert);
+            writer.Write((byte)0x81);
+            writer.Write((byte)0x80);
+            writer.Write((byte)0x04);
+        }
+
+        Assert.Throws<InvalidDataException>(() => WALEntry.Deserialize(ms.ToArray()));
+    }
+
+    [Fact]
+    public void WALEntry_Deserialize_Rejects_Invalid_Checkpoint_Transaction_Count()
+    {
+        using var ms = new MemoryStream();
+        using (var writer = new BinaryWriter(ms, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(1L);
+            writer.Write((int)WALOperationType.Insert);
+            writer.Write("Users");
+            writer.Write(false);
+            writer.Write(false);
+            writer.Write(false);
+            writer.Write(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            writer.Write(1L);
+            writer.Write(int.MaxValue);
+        }
+
+        Assert.Throws<InvalidDataException>(() => WALEntry.Deserialize(ms.ToArray()));
+    }
+
+    [Fact]
+    public void WALEntry_Deserialize_Rejects_Incomplete_New_Value_Payload()
+    {
+        using var ms = new MemoryStream();
+        using (var writer = new BinaryWriter(ms, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(1L);
+            writer.Write((int)WALOperationType.Update);
+            writer.Write("Users");
+            writer.Write(false);
+            writer.Write(false);
+            writer.Write(true);
+            writer.Write(4);
+            writer.Write([0x01, 0x02]);
+            writer.Write(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            writer.Write(1L);
+            writer.Write(0);
+            writer.Write(0L);
+        }
+
+        Assert.Throws<EndOfStreamException>(() => WALEntry.Deserialize(ms.ToArray()));
+    }
+
+    [Fact]
     public void Database_Integrity_Check_Detects_Corrupted_Header()
     {
         var testDbPath = Path.Combine(Path.GetTempPath(), $"test_integrity_{Guid.NewGuid()}.mde");
@@ -521,7 +582,7 @@ public class ImprovementTests
 
     private sealed class InMemoryDatabaseLogger : IDatabaseLogger
     {
-        public ConcurrentBag<DatabaseLogEntry> Entries { get; } = new();
+        public ConcurrentBag<DatabaseLogEntry> Entries { get; } = [];
 
         public void Log(DatabaseLogEntry entry)
         {

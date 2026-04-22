@@ -189,7 +189,7 @@ public class DatabaseTests : IDisposable
             .OrderByDescending(r => (int)r["Id"]!)
             .ToList();
 
-        Assert.Equal(new[] { 10, 8, 6 }, results.Select(r => (int)r["Id"]!).ToArray());
+        Assert.Equal([10, 8, 6], results.Select(r => (int)r["Id"]!).ToArray());
     }
     
     [Fact]

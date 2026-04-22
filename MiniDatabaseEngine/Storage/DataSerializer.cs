@@ -10,7 +10,7 @@ public static class DataSerializer
     public static byte[] Serialize(object? value, DataType dataType)
     {
         if (value == null)
-            return new byte[] { 0 }; // Null marker
+            return [0]; // Null marker
         
         try
         {

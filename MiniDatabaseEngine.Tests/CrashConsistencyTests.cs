@@ -16,11 +16,11 @@ public class CrashConsistencyTests
         {
             using (var db = new Database(dbPath))
             {
-                var table = db.CreateTable("Users", new List<ColumnDefinition>
-                {
+                var table = db.CreateTable("Users",
+                [
                     new("Id", DataType.Int, false),
                     new("Name", DataType.String, false)
-                }, "Id");
+                ], "Id");
 
                 var row = new DataRow(table.Schema);
                 row["Id"] = 1;
@@ -59,11 +59,11 @@ public class CrashConsistencyTests
         {
             using (var db = new Database(dbPath))
             {
-                var table = db.CreateTable("Users", new List<ColumnDefinition>
-                {
+                var table = db.CreateTable("Users",
+                [
                     new("Id", DataType.Int, false),
                     new("Name", DataType.String, false)
-                }, "Id");
+                ], "Id");
 
                 var row = new DataRow(table.Schema);
                 row["Id"] = 1;

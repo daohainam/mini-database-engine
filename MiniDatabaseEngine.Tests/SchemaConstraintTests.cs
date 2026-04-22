@@ -16,11 +16,11 @@ public class SchemaConstraintTests : IDisposable
     [Fact]
     public void Insert_Rejects_Null_For_NonNullable_Column()
     {
-        var table = _database.CreateTable("Users", new List<ColumnDefinition>
-        {
+        var table = _database.CreateTable("Users",
+        [
             new("Id", DataType.Int, false),
             new("Name", DataType.String, false)
-        }, "Id");
+        ], "Id");
 
         var row = new DataRow(table.Schema);
         row["Id"] = 1;
@@ -32,11 +32,11 @@ public class SchemaConstraintTests : IDisposable
     [Fact]
     public void Insert_Rejects_Type_Mismatch()
     {
-        var table = _database.CreateTable("Users", new List<ColumnDefinition>
-        {
+        var table = _database.CreateTable("Users",
+        [
             new("Id", DataType.Int, false),
             new("Age", DataType.Int, false)
-        }, "Id");
+        ], "Id");
 
         var row = new DataRow(table.Schema);
         row["Id"] = 1;
@@ -48,11 +48,11 @@ public class SchemaConstraintTests : IDisposable
     [Fact]
     public void Insert_Rejects_String_Exceeding_MaxLength()
     {
-        var table = _database.CreateTable("Users", new List<ColumnDefinition>
-        {
+        var table = _database.CreateTable("Users",
+        [
             new("Id", DataType.Int, false),
             new("Name", DataType.String, false, maxLength: 5)
-        }, "Id");
+        ], "Id");
 
         var row = new DataRow(table.Schema);
         row["Id"] = 1;
@@ -64,11 +64,11 @@ public class SchemaConstraintTests : IDisposable
     [Fact]
     public void Insert_Rejects_Duplicate_Primary_Key()
     {
-        var table = _database.CreateTable("Users", new List<ColumnDefinition>
-        {
+        var table = _database.CreateTable("Users",
+        [
             new("Id", DataType.Int, false),
             new("Name", DataType.String, false)
-        }, "Id");
+        ], "Id");
 
         var first = new DataRow(table.Schema);
         first["Id"] = 1;
@@ -85,11 +85,11 @@ public class SchemaConstraintTests : IDisposable
     [Fact]
     public void Transaction_Insert_Rejects_Duplicate_Primary_Key_In_Same_Transaction()
     {
-        var table = _database.CreateTable("Users", new List<ColumnDefinition>
-        {
+        var table = _database.CreateTable("Users",
+        [
             new("Id", DataType.Int, false),
             new("Name", DataType.String, false)
-        }, "Id");
+        ], "Id");
 
         using var txn = _database.BeginTransaction();
         var first = new DataRow(table.Schema);

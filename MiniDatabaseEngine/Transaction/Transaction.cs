@@ -38,7 +38,7 @@ public class Transaction : IDisposable
         _commitApplyCallback = commitApplyCallback;
         _state = TransactionState.Active;
         _lock = new ReaderWriterLockSlim();
-        _entries = new List<WALEntry>();
+        _entries = [];
 
         // Log the beginning of the transaction
         _walManager.AppendEntry(new WALEntry

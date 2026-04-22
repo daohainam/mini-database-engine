@@ -124,7 +124,7 @@ public class TransactionManager : IDisposable
                 {
                     if (!transactions.ContainsKey(entry.TransactionId))
                     {
-                        transactions[entry.TransactionId] = new List<WALEntry>();
+                        transactions[entry.TransactionId] = [];
                     }
                     transactions[entry.TransactionId].Add(entry);
                 }

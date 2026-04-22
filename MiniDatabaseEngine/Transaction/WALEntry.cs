@@ -31,7 +31,7 @@ public class WALEntry
     public byte[]? NewValue { get; set; }
     public long Timestamp { get; set; }
     public long SequenceNumber { get; set; }
-    public List<long> CheckpointActiveTransactionIds { get; set; } = new();
+    public List<long> CheckpointActiveTransactionIds { get; set; } = [];
     public long CheckpointNextTransactionId { get; set; }
 
     public WALEntry()

@@ -27,7 +27,7 @@ public abstract class BPlusTreeNode
     protected BPlusTreeNode(bool isLeaf)
     {
         IsLeaf = isLeaf;
-        Keys = new List<object>();
+        Keys = [];
     }
     
     public abstract int KeyCount { get; }
@@ -42,7 +42,7 @@ public class BPlusTreeInternalNode : BPlusTreeNode
     
     public BPlusTreeInternalNode() : base(false)
     {
-        Children = new List<BPlusTreeNode>();
+        Children = [];
     }
     
     public override int KeyCount => Keys.Count;
@@ -59,7 +59,7 @@ public class BPlusTreeLeafNode : BPlusTreeNode
     
     public BPlusTreeLeafNode() : base(true)
     {
-        Values = new List<object?>();
+        Values = [];
     }
     
     public override int KeyCount => Keys.Count;

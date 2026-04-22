@@ -79,7 +79,7 @@ public class Database : IDisposable
         _lock = new ReaderWriterLockSlim();
         _walManager = new WALManager(filePath);
         _transactionManager = new TransactionManager(_walManager, ApplyCommittedEntries);
-        _pendingRecoveryEntries = new Dictionary<string, List<WALEntry>>();
+        _pendingRecoveryEntries = [];
 
         LoadCatalogFromStorage();
         RecoverFromWAL();
@@ -471,7 +471,7 @@ public class Database : IDisposable
                 // Otherwise, cache for later application when table is created
                 if (!_pendingRecoveryEntries.ContainsKey(entry.TableName))
                 {
-                    _pendingRecoveryEntries[entry.TableName] = new List<WALEntry>();
+                    _pendingRecoveryEntries[entry.TableName] = [];
                 }
                 _pendingRecoveryEntries[entry.TableName].Add(entry);
             }

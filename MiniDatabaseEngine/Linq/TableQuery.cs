@@ -61,9 +61,8 @@ public class TableQueryProvider : IQueryProvider
     
     public IQueryable CreateQuery(Expression expression)
     {
-        if (expression == null)
-            throw new ArgumentNullException(nameof(expression));
-        
+        ArgumentNullException.ThrowIfNull(expression);
+
         var genericArgs = expression.Type.GetGenericArguments();
         if (genericArgs.Length == 0)
             throw new ArgumentException("Expression type must be a generic type with at least one type argument", nameof(expression));
@@ -73,7 +72,7 @@ public class TableQueryProvider : IQueryProvider
         {
             return (IQueryable)Activator.CreateInstance(
                 typeof(TableQuery<>).MakeGenericType(elementType),
-                new object[] { this, expression })!;
+                [this, expression])!;
         }
         catch (System.Reflection.TargetInvocationException tie)
         {
@@ -134,7 +133,7 @@ public class TableQueryProvider : IQueryProvider
             if (plan.IndexRange.ExactKey != null)
             {
                 var single = _table.SelectByKey(plan.IndexRange.ExactKey);
-                return single != null ? new List<DataRow> { single } : new List<DataRow>();
+                return single != null ? [single] : [];
             }
 
             if (plan.IndexRange.HasLowerBound || plan.IndexRange.HasUpperBound)
@@ -175,20 +174,13 @@ internal sealed class QueryExecutionPlan(
     public bool IsOrderByDescending { get; } = isOrderByDescending;
 }
 
-internal class WhereExpressionVisitor : ExpressionVisitor
+internal class WhereExpressionVisitor(string primaryKeyColumn, DataType primaryKeyType, IComparer<object> comparer) : ExpressionVisitor
 {
-    private readonly string _primaryKeyColumn;
-    private readonly DataType _primaryKeyType;
-    private readonly IComparer<object> _comparer;
+    private readonly string _primaryKeyColumn = primaryKeyColumn;
+    private readonly DataType _primaryKeyType = primaryKeyType;
+    private readonly IComparer<object> _comparer = comparer;
 
-    public WhereExpressionVisitor(string primaryKeyColumn, DataType primaryKeyType, IComparer<object> comparer)
-    {
-        _primaryKeyColumn = primaryKeyColumn;
-        _primaryKeyType = primaryKeyType;
-        _comparer = comparer;
-    }
-
-    public List<Func<DataRow, bool>> Predicates { get; } = new List<Func<DataRow, bool>>();
+    public List<Func<DataRow, bool>> Predicates { get; } = [];
     public IndexRangeConstraint? IndexRange { get; private set; }
     
     protected override Expression VisitMethodCall(MethodCallExpression node)
