@@ -62,7 +62,7 @@ public sealed class OrmTests : IDisposable
             .OrderBy(u => u.Name)
             .ToList();
 
-        Assert.Equal(1, queryResult.Count);
+        Assert.Single(queryResult);
         Assert.Equal("Alice Updated", queryResult[0].Name);
 
         var deleteResult = users.Delete(2);

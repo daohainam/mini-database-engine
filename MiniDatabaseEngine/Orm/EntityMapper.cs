@@ -94,7 +94,7 @@ public sealed class EntityMapper<T> where T : class, new()
             mappings[^1].ColumnDefinition = column;
         }
 
-        var duplicateColumn = mappings.GroupBy(m => m.ColumnName, StringComparer.Ordinal)
+        var duplicateColumn = mappings.GroupBy(m => m.ColumnName, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault(g => g.Count() > 1);
         if (duplicateColumn != null)
             throw new InvalidOperationException($"Entity '{entityType.Name}' has duplicate mapped column name '{duplicateColumn.Key}'.");
