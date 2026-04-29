@@ -4,6 +4,7 @@ namespace MiniDatabaseEngine.Orm;
 
 public sealed class EntityMapper<T> where T : class, new()
 {
+    private const int DefaultMaxLength = 255;
     private static readonly NullabilityInfoContext NullabilityContext = new();
     private static readonly EntityMetadata Metadata = BuildMetadata();
 
@@ -75,7 +76,7 @@ public sealed class EntityMapper<T> where T : class, new()
             var columnName = property.GetCustomAttribute<ColumnNameAttribute>()?.Name ?? property.Name;
             var dataType = ResolveDataType(property.PropertyType);
             var isNullable = ResolveNullable(property);
-            var maxLength = property.GetCustomAttribute<MaxLengthAttribute>()?.Length ?? 255;
+            var maxLength = property.GetCustomAttribute<MaxLengthAttribute>()?.Length ?? DefaultMaxLength;
 
             mappings.Add(new PropertyMapping(property, columnName));
 
