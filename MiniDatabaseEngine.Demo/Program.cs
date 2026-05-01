@@ -1,4 +1,5 @@
 ﻿using MiniDatabaseEngine;
+using MiniDatabaseEngine.Orm;
 
 Console.WriteLine("=== Mini Database Engine Demo ===\n");
 
@@ -156,5 +157,26 @@ Console.WriteLine("8. Flushing to disk...");
 db.Flush();
 Console.WriteLine($"Data persisted to: {dbPath}\n");
 
+Console.WriteLine("9. ORM-style object mapping...");
+var ormUsers = db.CreateTable<OrmUser>();
+ormUsers.Insert(new OrmUser
+{
+    Id = 1,
+    Name = "Orm Alice",
+    Email = "orm.alice@example.com"
+});
+
+var ormUser = ormUsers.SelectByKey(1);
+Console.WriteLine($"   ✓ ORM user: Id={ormUser?.Id}, Name={ormUser?.Name}, Email={ormUser?.Email}\n");
+
 Console.WriteLine("=== Demo completed successfully! ===");
 Console.WriteLine($"\nDatabase file size: {new FileInfo(dbPath).Length} bytes");
+
+[TableName("OrmUsers")]
+public sealed class OrmUser
+{
+    [PrimaryKey]
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+}
