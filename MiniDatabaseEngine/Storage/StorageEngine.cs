@@ -62,7 +62,7 @@ public class StorageEngine : IDisposable
                 0,
                 MemoryMappedFileAccess.ReadWrite,
                 HandleInheritability.None,
-                false);
+                leaveOpen: true);
         }
     }
     

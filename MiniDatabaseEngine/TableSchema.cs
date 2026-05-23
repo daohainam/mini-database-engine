@@ -8,6 +8,7 @@ public class TableSchema
     public string TableName { get; }
     public IReadOnlyList<ColumnDefinition> Columns { get; }
     public string PrimaryKeyColumn { get; }
+    private readonly Dictionary<string, int> _columnIndexMap;
     
     public TableSchema(string tableName, List<ColumnDefinition> columns, string primaryKeyColumn)
     {
@@ -21,15 +22,16 @@ public class TableSchema
             
         if (!string.IsNullOrEmpty(primaryKeyColumn) && !columns.Any(c => c.Name == primaryKeyColumn))
             throw new ArgumentException($"Primary key column '{primaryKeyColumn}' not found in columns", nameof(primaryKeyColumn));
+
+        _columnIndexMap = new Dictionary<string, int>(columns.Count, StringComparer.Ordinal);
+        for (int i = 0; i < columns.Count; i++)
+        {
+            _columnIndexMap[columns[i].Name] = i;
+        }
     }
     
     public int GetColumnIndex(string columnName)
     {
-        for (int i = 0; i < Columns.Count; i++)
-        {
-            if (Columns[i].Name == columnName)
-                return i;
-        }
-        return -1;
+        return _columnIndexMap.TryGetValue(columnName, out var index) ? index : -1;
     }
 }

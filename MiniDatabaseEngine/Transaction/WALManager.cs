@@ -29,6 +29,13 @@ public class WALManager : IDisposable
     private readonly ReaderWriterLockSlim _lock;
     private long _sequenceNumber;
     private long _checkpointSequence;
+    private int _corruptedEntriesEncountered;
+
+    /// <summary>
+    /// Gets the number of corrupted or truncated entries encountered during the last read operation.
+    /// A non-zero value indicates potential data loss during recovery.
+    /// </summary>
+    public int CorruptedEntriesEncountered => _corruptedEntriesEncountered;
 
     public WALManager(string databaseFilePath)
     {
@@ -72,6 +79,7 @@ public class WALManager : IDisposable
             writer.Write(checksum);
             writer.Write(serialized);
             writer.Flush();
+            _walStream.Flush(true); // fsync to ensure durability
         }
         finally
         {
@@ -101,6 +109,7 @@ public class WALManager : IDisposable
     private List<WALEntry> ReadAllEntriesInternal()
     {
         var entries = new List<WALEntry>();
+        _corruptedEntriesEncountered = 0;
         _walStream.Seek(0, SeekOrigin.Begin);
 
         using var reader = new BinaryReader(_walStream, System.Text.Encoding.UTF8, leaveOpen: true);
@@ -114,6 +123,7 @@ public class WALManager : IDisposable
                 if (length <= 0 || length > MaxWALEntrySize)
                 {
                     // Corrupted WAL file - stop reading
+                    _corruptedEntriesEncountered++;
                     break;
                 }
                 
@@ -130,6 +140,7 @@ public class WALManager : IDisposable
                         if (data.Length != length)
                         {
                             // Incomplete entry - stop reading
+                            _corruptedEntriesEncountered++;
                             break;
                         }
 
@@ -137,6 +148,7 @@ public class WALManager : IDisposable
                         if (storedChecksum != computedChecksum)
                         {
                             // Corrupted entry payload - stop at last valid entry
+                            _corruptedEntriesEncountered++;
                             break;
                         }
                     }
@@ -155,6 +167,7 @@ public class WALManager : IDisposable
                 if (data.Length != length)
                 {
                     // Incomplete entry - stop reading
+                    _corruptedEntriesEncountered++;
                     break;
                 }
                 
@@ -163,12 +176,14 @@ public class WALManager : IDisposable
             }
             catch (EndOfStreamException)
             {
-                // Reached end of valid entries
+                // Reached end of valid entries - may indicate truncation
+                _corruptedEntriesEncountered++;
                 break;
             }
             catch (InvalidDataException)
             {
                 // Corrupted entry payload - stop at last valid entry
+                _corruptedEntriesEncountered++;
                 break;
             }
         }
@@ -233,6 +248,7 @@ public class WALManager : IDisposable
             writer.Write(checksum);
             writer.Write(serialized);
             writer.Flush();
+            _walStream.Flush(true); // fsync to ensure checkpoint durability
         }
         finally
         {
