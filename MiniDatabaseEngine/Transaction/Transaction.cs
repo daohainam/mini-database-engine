@@ -21,7 +21,7 @@ public class Transaction : IDisposable
     private readonly long _transactionId;
     private readonly WALManager _walManager;
     private readonly TransactionManager _transactionManager;
-    private TransactionState _state;
+    private int _state; // Uses TransactionState enum values via Interlocked
     private readonly ReaderWriterLockSlim _lock;
     private readonly List<WALEntry> _entries;
     private readonly Action<IReadOnlyList<WALEntry>> _commitApplyCallback;
@@ -36,7 +36,7 @@ public class Transaction : IDisposable
         _walManager = walManager;
         _transactionManager = transactionManager;
         _commitApplyCallback = commitApplyCallback;
-        _state = TransactionState.Active;
+        _state = (int)TransactionState.Active;
         _lock = new ReaderWriterLockSlim();
         _entries = [];
 
@@ -49,7 +49,7 @@ public class Transaction : IDisposable
     }
 
     public long TransactionId => _transactionId;
-    public TransactionState State => _state;
+    public TransactionState State => (TransactionState)Volatile.Read(ref _state);
 
     /// <summary>
     /// Commit the transaction
@@ -59,8 +59,8 @@ public class Transaction : IDisposable
         _lock.EnterWriteLock();
         try
         {
-            if (_state != TransactionState.Active)
-                throw new InvalidOperationException($"Cannot commit transaction in state: {_state}");
+            if (Interlocked.CompareExchange(ref _state, (int)TransactionState.Committed, (int)TransactionState.Active) != (int)TransactionState.Active)
+                throw new InvalidOperationException($"Cannot commit transaction in state: {State}");
 
             // Log the commit
             _walManager.AppendEntry(new WALEntry
@@ -75,8 +75,13 @@ public class Transaction : IDisposable
             // Apply buffered writes only after WAL commit is durable.
             _commitApplyCallback(_entries);
 
-            _state = TransactionState.Committed;
             _transactionManager.CompleteTransaction(_transactionId);
+        }
+        catch (Exception) when (State != TransactionState.Committed)
+        {
+            // If commit failed before state was updated, revert to Active
+            Interlocked.CompareExchange(ref _state, (int)TransactionState.Active, (int)TransactionState.Committed);
+            throw;
         }
         finally
         {
@@ -92,8 +97,8 @@ public class Transaction : IDisposable
         _lock.EnterWriteLock();
         try
         {
-            if (_state != TransactionState.Active)
-                throw new InvalidOperationException($"Cannot rollback transaction in state: {_state}");
+            if (Interlocked.CompareExchange(ref _state, (int)TransactionState.RolledBack, (int)TransactionState.Active) != (int)TransactionState.Active)
+                throw new InvalidOperationException($"Cannot rollback transaction in state: {State}");
 
             // Log the rollback
             _walManager.AppendEntry(new WALEntry
@@ -104,7 +109,6 @@ public class Transaction : IDisposable
 
             _walManager.Flush();
 
-            _state = TransactionState.RolledBack;
             _transactionManager.CompleteTransaction(_transactionId);
         }
         finally
@@ -208,13 +212,13 @@ public class Transaction : IDisposable
 
     private void EnsureActive()
     {
-        if (_state != TransactionState.Active)
-            throw new InvalidOperationException($"Transaction is not active: {_state}");
+        if (State != TransactionState.Active)
+            throw new InvalidOperationException($"Transaction is not active: {State}");
     }
 
     public void Dispose()
     {
-        if (_state == TransactionState.Active)
+        if (State == TransactionState.Active)
         {
             try
             {

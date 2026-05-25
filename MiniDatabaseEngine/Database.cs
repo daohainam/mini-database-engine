@@ -476,6 +476,17 @@ public class Database : IDisposable
                 _pendingRecoveryEntries[entry.TableName].Add(entry);
             }
         });
+
+        var corruptedEntries = _walManager.CorruptedEntriesEncountered;
+        if (corruptedEntries > 0)
+        {
+            Log(DatabaseLogLevel.Warning, "wal.corruption_detected", "WAL corruption detected during recovery; some committed transactions may not have been recovered", new Dictionary<string, object?>
+            {
+                ["corruptedEntries"] = corruptedEntries,
+                ["recoveredEntries"] = replayedEntries
+            });
+        }
+
         Log(DatabaseLogLevel.Information, "database.recovered", "WAL recovery completed", new Dictionary<string, object?>
         {
             ["replayedEntries"] = replayedEntries
